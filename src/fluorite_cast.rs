@@ -15,13 +15,15 @@ pub struct FluoriteCast {
     distance_covered: f32,
     #[var]
     alive_for: f64,
+    #[var]
+    custom_data: VarDictionary,
     // TODO: implement current_acceleration which would work in conjunction with gravity
 }
 
 #[godot_api]
 impl FluoriteCast {
     #[func]
-    pub fn new_cast(payload: Option<Gd<Node3D>>, config: Gd<FluoriteCastConfig>) -> Gd<Self> {
+    pub fn new_cast(payload: Option<Gd<Node3D>>, config: Gd<FluoriteCastConfig>, custom_data: VarDictionary) -> Gd<Self> {
         let mut new_node = Gd::from_init_fn(|base| {
             Self {
                 base,
@@ -30,6 +32,7 @@ impl FluoriteCast {
                 current_velocity: Vector3::ZERO,
                 distance_covered: 0.0f32,
                 alive_for: 0.0f64,
+                custom_data,
             }
         });
         new_node.bind_mut().assign_payload(payload);
@@ -106,6 +109,7 @@ impl FluoriteCast {
         for _ in 0..slice_count {
             self.evaluate_raw(sliced_delta);
         }
+        self.maybe_free();
     }
     #[func]
     pub fn evaluate_raw(&mut self, delta: f64) -> () {
