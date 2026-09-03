@@ -1,0 +1,15 @@
+[package]
+name = "fluorite-cast"
+license = "MIT"
+version = "0.0.0-nightly"
+edition = "2024"
+publish = false # Suppress publishing during dev build
+
+[features]
+
+[dependencies]
+godot = { version = "0.5" }
+
+## Uncomment below two lines if building a standalone cdylib build
+#[lib]
+#crate-type = ["cdylib"]
