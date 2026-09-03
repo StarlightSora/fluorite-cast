@@ -10,3 +10,8 @@ use godot::prelude::*;
 pub struct FluoriteCastExtension;
 #[gdextension(entry_symbol = fluorite_cast)]
 unsafe impl ExtensionLibrary for FluoriteCastExtension {}
+
+pub mod prelude;
+pub mod fluorite_cast_factory;
+pub mod fluorite_cast_config;
+pub mod fluorite_cast;
