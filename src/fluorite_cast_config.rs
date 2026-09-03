@@ -47,6 +47,8 @@ pub struct FluoriteCastConfig {
     pub target_length: f64,
     #[var]
     pub max_supersampling: i64,
+    // TODO: Implement gravity effect multiplier
+    // TODO: start worrying about acutal ray/shapecasting soon
 }
 
 #[godot_api]

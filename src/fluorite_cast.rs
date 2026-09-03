@@ -15,6 +15,7 @@ pub struct FluoriteCast {
     distance_covered: f32,
     #[var]
     alive_for: f64,
+    // TODO: implement current_acceleration which would work in conjunction with gravity
 }
 
 #[godot_api]
@@ -42,8 +43,8 @@ impl FluoriteCast {
     }
     #[func]
     pub fn assign_payload(&mut self, payload: Option<Gd<Node3D>>) -> () {
-        if let Some(node) = self.payload_node.take() {
-            Gd::free(node);
+        if let Some(mut node) = self.payload_node.take() {
+            node.queue_free();
         }
         self.payload_node = payload;
     }
