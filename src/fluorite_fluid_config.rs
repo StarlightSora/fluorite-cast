@@ -7,10 +7,13 @@ use godot::prelude::*;
 pub struct FluoriteFluidConfig {
     base: Base<Resource>,
     #[export]
+    #[init(val = 1.164)]
     pub fluid_density_kgm3: f64, // kg/m3 scalar
     #[export]
+    #[init(val = 30.6)]
     pub dynamic_viscosity_upas: f64, // uPa*s scalar (NOT Pa*s)
     #[export]
+    #[init(val = 332.0)]
     pub speed_of_sound: f64, // m/s scalar
     #[export]
     pub ambient_airspeed: Vector3, // m/s vector
