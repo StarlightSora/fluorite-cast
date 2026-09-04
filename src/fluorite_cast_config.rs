@@ -83,7 +83,7 @@ impl FluoriteCastConfig {
         target_delta: f64,
         target_length: f64,
         max_supersampling: i64,
-        &custom_data: VarDictionary, // probably don't want to move this either
+        &custom_data: VarDictionary, // probably don't want to move this, so get a reference and clone it like a Rc
     ) -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {

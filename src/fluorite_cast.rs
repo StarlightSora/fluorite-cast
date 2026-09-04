@@ -160,16 +160,19 @@ impl FluoriteCast {
         // TODO: Modify velocity later when we add acceleration
         match self.gravity_cache {
             None => {
-                match self.config.bind().gravity_behavior {
+                let gravity_behavior = self.config.bind().gravity_behavior;
+                let gravity_multiplier = self.config.bind().gravity_multiplier;
+                match gravity_behavior {
                     GravityBehavior::UseGlobalGravityRealTime | GravityBehavior::UseCurrentGravityRealTime => {
                         // `get_gravity` returns global gravity if `CollisionShape3D` is missing
-                        self.current_velocity += (self.base().get_gravity() + self.current_acceleration)*(delta as f32);
+                        self.current_velocity += ((self.base().get_gravity()*(gravity_multiplier as f32)) + self.current_acceleration)*(delta as f32);
                     },
                     _ => { panic!("gravity_cache should exist for cached modes") }
                 }
             },
             Some(g) => {
-                self.current_velocity += (g + self.current_acceleration)*(delta as f32);
+                let gravity_multiplier = self.config.bind().gravity_multiplier;
+                self.current_velocity += (g*(gravity_multiplier as f32) + self.current_acceleration)*(delta as f32);
             },
         }
         let vel = self.current_velocity;
