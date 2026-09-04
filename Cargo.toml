@@ -8,7 +8,7 @@ publish = false # Suppress publishing during dev build
 [features]
 
 [dependencies]
-godot = { version = "0.5" }
+godot = { version = "0.5", features = ["upcoming-editor-placeholders"] }
 
 ## Uncomment below two lines if building a standalone cdylib build
 #[lib]

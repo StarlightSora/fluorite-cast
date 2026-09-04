@@ -1,4 +1,4 @@
-use godot::prelude::*;
+use godot::{classes::Shape3D, prelude::*};
 
 #[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
 #[godot(via = i64)]
@@ -27,29 +27,44 @@ pub enum SuperSamplingMode {
     IfAboveTargetDeltaOrTooLong,
 }
 
+#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
+#[godot(via = i64)]
+pub enum GravityBehavior {
+    Ignore,
+    #[default]
+    UseGlobalGravityCached,
+    UseGlobalGravityRealTime,
+    UseCurrentGravityRealTime,
+}
+
 #[derive(GodotClass)]
 #[class(init, base=Resource)]
 pub struct FluoriteCastConfig {
     base: Base<Resource>,
-    #[var]
-    pub parent_to: Option<Gd<Node3D>>,
-    #[var]
+    #[export]
+    pub shape: Option<Gd<Shape3D>>,
+    #[export(flags_3d_physics)]
+    pub collision_mask: u32,
+    #[export]
     pub max_alive_time: f64,
-    #[var]
+    #[export]
     pub max_total_length: f64,
-    #[var]
+    #[export]
+    pub gravity_behavior: GravityBehavior,
+    #[export]
+    pub gravity_multiplier: f64,
+    #[export]
     pub evaluate_mode: EvaluateMode,
-    #[var]
+    #[export]
     pub super_sampling_mode: SuperSamplingMode,
-    #[var]
+    #[export]
     pub target_delta: f64,
-    #[var]
+    #[export]
     pub target_length: f64,
-    #[var]
+    #[export]
     pub max_supersampling: i64,
-    #[var]
+    #[export]
     pub custom_data: VarDictionary,
-    // TODO: Implement gravity effect multiplier
     // TODO: start worrying about acutal ray/shapecasting soon
 }
 
@@ -57,9 +72,12 @@ pub struct FluoriteCastConfig {
 impl FluoriteCastConfig {
     #[func]
     pub fn new_config(
-        &parent_to: Gd<Node3D>, // probably don't want to move this
+        shape: Gd<Shape3D>,
+        collision_mask: u32,
         max_alive_time: f64,
         max_total_length: f64,
+        gravity_behavior: GravityBehavior,
+        gravity_multiplier: f64,
         evaluate_mode: EvaluateMode,
         super_sampling_mode: SuperSamplingMode,
         target_delta: f64,
@@ -70,13 +88,12 @@ impl FluoriteCastConfig {
         Gd::from_init_fn(|base| {
             Self {
                 base,
-                // TODO: Resources cannot hold direct references to Nodes in GDScript. I have no idea why this isn't raising an error. This might crash.
-                // So this probably should be either stored as a NodePath instead, or have the base of this struct be Base<Node3D> instead
-                // IDEA 1: Once FluoriteCastFactory is starting to be worked on, just let it accept the path and have it resolve to an actual node reference, since that struct is Base<Node3D>
-                // IDEA 2: Scrap this field and have the caller assign the node into FluoriteCastFactory directly instead
-                parent_to: Some(parent_to.clone()),
-                max_total_length,
+                shape: Some(shape.clone()),
+                collision_mask,
                 max_alive_time,
+                max_total_length,
+                gravity_behavior,
+                gravity_multiplier,
                 evaluate_mode,
                 super_sampling_mode,
                 target_delta,
@@ -87,16 +104,19 @@ impl FluoriteCastConfig {
         })
     }
     #[func]
-    pub fn new_default_config(&parent_to: Gd<Node3D>) -> Gd<Self> {
+    pub fn new_default_config(shape: Gd<Shape3D>) -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
                 base,
-                parent_to: Some(parent_to.clone()),
-                max_total_length: 2000.0,
+                shape: Some(shape.clone()),
+                collision_mask: 0b1,
                 max_alive_time: 15.0,
+                max_total_length: 2000.0,
+                gravity_behavior: GravityBehavior::default(),
+                gravity_multiplier: 1.0,
                 evaluate_mode: EvaluateMode::default(),
                 super_sampling_mode: SuperSamplingMode::default(),
-                target_delta: Self::hz_to_delta(60.0 * 0.95),
+                target_delta: Self::hz_to_delta(120.0 * 0.95),
                 target_length: 25.0,
                 max_supersampling: 4,
                 custom_data: VarDictionary::new(),
@@ -106,5 +126,9 @@ impl FluoriteCastConfig {
     #[func]
     pub fn hz_to_delta(hz: f64) -> f64 {
         1.0 / hz
+    }
+    #[func]
+    pub fn delta_to_hz(delta: f64) -> f64 {
+        1.0 / delta
     }
 }

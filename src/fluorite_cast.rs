@@ -1,47 +1,93 @@
-use godot::{global::ceilf, prelude::*};
+use godot::{
+    classes::{
+        CollisionShape3D,
+        IStaticBody3D,
+        ProjectSettings,
+        StaticBody3D,
+    },
+    global::ceilf,
+    prelude::*,
+};
 use core::cmp::max;
 
-use super::fluorite_cast_config::{FluoriteCastConfig, EvaluateMode, SuperSamplingMode};
+use super::fluorite_cast_config::{
+    FluoriteCastConfig,
+    EvaluateMode,
+    SuperSamplingMode,
+    GravityBehavior,
+};
 
 #[derive(GodotClass)]
-#[class(init, base=Node3D)]
+#[class(init, base=StaticBody3D)]
 pub struct FluoriteCast {
-    base: Base<Node3D>,
+    base: Base<StaticBody3D>,
     payload_node: Option<Gd<Node3D>>,
+    gravity_cache: Option<Vector3>,
     config: Gd<FluoriteCastConfig>,
     #[var]
     current_velocity: Vector3,
+    #[var]
+    current_acceleration: Vector3,
     #[var]
     distance_covered: f32,
     #[var]
     alive_for: f64,
     #[var]
     custom_data: VarDictionary,
-    // TODO: implement current_acceleration which would work in conjunction with gravity
 }
 
 #[godot_api]
 impl FluoriteCast {
     #[func]
-    pub fn new_cast(payload: Option<Gd<Node3D>>, config: Gd<FluoriteCastConfig>, custom_data: VarDictionary) -> Gd<Self> {
+    pub fn new_cast(&mut parent_to: Gd<Node3D>, payload: Option<Gd<Node3D>>, config: Gd<FluoriteCastConfig>, custom_data: VarDictionary) -> Gd<Self> {
         let mut new_node = Gd::from_init_fn(|base| {
             Self {
                 base,
                 payload_node: None,
-                config: config.clone(), // Grab a reference to it via reference counted smart pointer
+                gravity_cache: None,
+                config: config.clone(), // We clone because Gd<T> is basically a Rc<RefCell<T>>
                 current_velocity: Vector3::ZERO,
+                current_acceleration: Vector3::ZERO,
                 distance_covered: 0.0f32,
                 alive_for: 0.0f64,
                 custom_data,
             }
         });
-        new_node.bind_mut().assign_payload(payload);
-        let maybe_parent: Option<Gd<Node3D>> = {
-            new_node.bind_mut().config.bind().parent_to.clone()
-        };
-        if let Some(mut to_parent) = maybe_parent {
-            to_parent.add_child(&new_node);
+        // The base needs to be `StaticBody3D`, and a `CollisionShape3D` is needed so we can use `get_gravity` for `UseCurrentGravityRealTime` mode
+        let mut gd_colshape3d = None;
+
+        let mut new_node_bind = new_node.bind_mut();
+        let collision_mask_data = new_node_bind.config.bind().collision_mask;
+        let gravity_behavior = new_node_bind.config.bind().gravity_behavior;
+        match gravity_behavior {
+            GravityBehavior::Ignore => {
+                new_node_bind.gravity_cache.replace(Vector3::ZERO);
+            },
+            GravityBehavior::UseGlobalGravityCached => {
+                let res = ProjectSettings::singleton().get_setting("physics/3d/default_gravity_vector").to::<Vector3>()
+                    * (ProjectSettings::singleton().get_setting("physics/3d/default_gravity").to::<f64>() as f32);
+                new_node_bind.gravity_cache.replace(res);
+            },
+            GravityBehavior::UseGlobalGravityRealTime => {}, // No-op
+            GravityBehavior::UseCurrentGravityRealTime => {
+                // `CollisionShape3D` is only needed for real-time local gravity polling
+                gd_colshape3d.replace(CollisionShape3D::new_alloc());
+                let some_cs3d = gd_colshape3d.as_mut().expect("Added right above");
+                some_cs3d.set_name("_FluoriteCastGravityPollingCS3D");
+                some_cs3d.set_shape(&new_node_bind.config.bind().shape.clone().expect("Shape should always be assigned"));
+            },
         }
+        new_node_bind.assign_payload(payload);
+        drop(new_node_bind);
+
+        new_node.set_collision_mask(collision_mask_data);
+        new_node.set_collision_layer(0b0); // we only need to get affected by `Area3D`s for real-time local gravity polling, so disable collision layer entirely
+        if let Some(some_gd_cs3) = gd_colshape3d {
+            new_node.add_child(&some_gd_cs3);
+        }
+
+        parent_to.add_child(&new_node);
+
         new_node
     }
     #[func]
@@ -50,15 +96,13 @@ impl FluoriteCast {
             node.queue_free();
         }
         self.payload_node = payload;
+        if let Some(payload_rc) = self.payload_node.clone() {
+            self.base_mut().add_child(&payload_rc);
+        }
     }
     #[func]
     pub fn fire(&mut self, global_origin: Transform3D, direction: Vector3) -> () {
         self.base_mut().set_global_transform(global_origin);
-        self.add_velocity(direction);
-    }
-    #[func] // TODO: might drop this
-    pub fn fire_as_local_space(&mut self, local_origin: Transform3D, direction: Vector3) -> () {
-        self.base_mut().set_transform(local_origin);
         self.add_velocity(direction);
     }
     #[func]
@@ -114,6 +158,20 @@ impl FluoriteCast {
     #[func]
     pub fn evaluate_raw(&mut self, delta: f64) -> () {
         // TODO: Modify velocity later when we add acceleration
+        match self.gravity_cache {
+            None => {
+                match self.config.bind().gravity_behavior {
+                    GravityBehavior::UseGlobalGravityRealTime | GravityBehavior::UseCurrentGravityRealTime => {
+                        // `get_gravity` returns global gravity if `CollisionShape3D` is missing
+                        self.current_velocity += (self.base().get_gravity() + self.current_acceleration)*(delta as f32);
+                    },
+                    _ => { panic!("gravity_cache should exist for cached modes") }
+                }
+            },
+            Some(g) => {
+                self.current_velocity += (g + self.current_acceleration)*(delta as f32);
+            },
+        }
         let vel = self.current_velocity;
         let mut base_mut = self.base_mut();
         let starting_pos = base_mut.get_position();
@@ -139,10 +197,14 @@ impl FluoriteCast {
             self.base_mut().queue_free();
         }
     }
+    #[func]
+    pub fn get_config(&self) -> Gd<FluoriteCastConfig> {
+        self.config.clone()
+    }
 }
 
 #[godot_api]
-impl INode3D for FluoriteCast {
+impl IStaticBody3D for FluoriteCast {
     fn process(&mut self, delta: f64) {
         let mut can_do = false; // The stupid crap borrowck forces me to do
         if let EvaluateMode::Process = self.config.bind().evaluate_mode {
