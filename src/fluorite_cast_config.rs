@@ -188,6 +188,15 @@ impl FluoriteCastCfgGravity {
     }
 }
 
+#[derive(GodotClass)]
+#[class(init, base=Resource)]
+pub struct FluoriteCastCfgHitDetection {
+    base: Base<Resource>,
+    #[export(flags_3d_physics)]
+    #[init(val = 0b1)]
+    pub hit_collision_mask: u32,
+}
+
 ////////////////
 
 #[derive(GodotClass)]
@@ -197,7 +206,8 @@ pub struct FluoriteCastConfig {
     #[export]
     pub shape: Option<Gd<Shape3D>>,
     #[export(flags_3d_physics)]
-    pub collision_mask: u32,
+    #[init(val = 0b1)]
+    pub area_collision_mask: u32,
     #[export]
     pub max_alive_time: f64,
     #[export]
@@ -220,7 +230,7 @@ impl FluoriteCastConfig {
     #[func]
     pub fn new_config(
         shape: Gd<Shape3D>,
-        collision_mask: u32,
+        area_collision_mask: u32,
         max_alive_time: f64,
         max_total_length: f64,
         evaluate_mode: EvaluateMode,
@@ -233,7 +243,7 @@ impl FluoriteCastConfig {
             Self {
                 base,
                 shape: Some(shape.clone()),
-                collision_mask,
+                area_collision_mask,
                 max_alive_time,
                 max_total_length,
                 evaluate_mode,
@@ -250,7 +260,7 @@ impl FluoriteCastConfig {
             Self {
                 base,
                 shape: Some(shape.clone()),
-                collision_mask: 0b1,
+                area_collision_mask: 0b1,
                 max_alive_time: 15.0,
                 max_total_length: 2000.0,
                 evaluate_mode: EvaluateMode::default(),
