@@ -10,11 +10,15 @@ use godot::{
 };
 use core::cmp::max;
 
+use super::fluorite_fluid_config::FluoriteFluidConfig;
+
 use super::fluorite_cast_config::{
     FluoriteCastConfig,
     EvaluateMode,
     SuperSamplingMode,
     GravityBehavior,
+    FluidDynamicsBehavior,
+    FluidDynamicsFidelity,
 };
 
 #[derive(GodotClass)]
@@ -23,6 +27,9 @@ pub struct FluoriteCast {
     base: Base<StaticBody3D>,
     payload_node: Option<Gd<Node3D>>,
     gravity_cache: Option<Vector3>,
+    ambient_airspeed_cache: Option<Vector3>,
+    speed_of_sound_cache: Option<f64>,
+    fluid_drag_const_cache: Option<f64>,
     config: Gd<FluoriteCastConfig>,
     #[var]
     current_velocity: Vector3,
@@ -33,23 +40,29 @@ pub struct FluoriteCast {
     #[var]
     alive_for: f64,
     #[var]
+    global_fluid: Option<Gd<FluoriteFluidConfig>>,
+    #[var]
     custom_data: VarDictionary,
 }
 
 #[godot_api]
 impl FluoriteCast {
     #[func]
-    pub fn new_cast(&mut parent_to: Gd<Node3D>, payload: Option<Gd<Node3D>>, config: Gd<FluoriteCastConfig>, custom_data: VarDictionary) -> Gd<Self> {
+    pub fn new_cast(&mut parent_to: Gd<Node3D>, payload: Option<Gd<Node3D>>, config: Gd<FluoriteCastConfig>, global_fluid: Gd<FluoriteFluidConfig>, custom_data: VarDictionary) -> Gd<Self> {
         let mut new_node = Gd::from_init_fn(|base| {
             Self {
                 base,
                 payload_node: None,
                 gravity_cache: None,
+                ambient_airspeed_cache: None,
+                speed_of_sound_cache: None,
+                fluid_drag_const_cache: None,
                 config: config.clone(), // We clone because Gd<T> is basically a Rc<RefCell<T>>
                 current_velocity: Vector3::ZERO,
                 current_acceleration: Vector3::ZERO,
                 distance_covered: 0.0f32,
                 alive_for: 0.0f64,
+                global_fluid: Some(global_fluid),
                 custom_data,
             }
         });
@@ -58,7 +71,8 @@ impl FluoriteCast {
 
         let mut new_node_bind = new_node.bind_mut();
         let collision_mask_data = new_node_bind.config.bind().collision_mask;
-        let gravity_behavior = new_node_bind.config.bind().gravity_behavior;
+        let gravity_behavior = new_node_bind.config.bind().cast_gravity_cfg.as_ref().expect("Should always exist").bind().gravity_behavior;
+        let fluid_dynamics_behavior = new_node_bind.config.bind().fluid_dynamics_cfg.as_ref().expect("Should always exist").bind().fluid_dynamics_behavior;
         match gravity_behavior {
             GravityBehavior::Ignore => {
                 new_node_bind.gravity_cache.replace(Vector3::ZERO);
@@ -76,6 +90,21 @@ impl FluoriteCast {
                 some_cs3d.set_name("_FluoriteCastGravityPollingCS3D");
                 some_cs3d.set_shape(&new_node_bind.config.bind().shape.clone().expect("Shape should always be assigned"));
             },
+        }
+        match fluid_dynamics_behavior {
+            FluidDynamicsBehavior::Ignore => {
+                new_node_bind.ambient_airspeed_cache.replace(Vector3::ZERO);
+                new_node_bind.fluid_drag_const_cache.replace(0.0);
+                new_node_bind.speed_of_sound_cache.replace(299792458.0); // 1c, placeholder value
+            },
+            FluidDynamicsBehavior::UseGlobalFluidCached => {
+                let global_fluid = new_node_bind.get_global_fluid_config();
+                new_node_bind.speed_of_sound_cache.replace(global_fluid.bind().speed_of_sound);
+                let computed_const_component = new_node_bind.compute_drag_const_component(global_fluid);
+                new_node_bind.fluid_drag_const_cache.replace(computed_const_component);
+            },
+            FluidDynamicsBehavior::UseGlobalFluidRealTime | FluidDynamicsBehavior::UseCurrentFluidRealTime
+                => {}, // No-op
         }
         new_node_bind.assign_payload(payload);
         drop(new_node_bind);
@@ -115,39 +144,41 @@ impl FluoriteCast {
         let estimated_dist = (vel*(delta as f32)).length() as f64;
         let slice_count: i64;
         let cfg_bind = self.config.bind();
-        match cfg_bind.super_sampling_mode {
+        let cast_fidelity_cfg_bind = cfg_bind.cast_fidelity_cfg.as_ref().expect("Should always exist").bind();
+        match cast_fidelity_cfg_bind.super_sampling_mode {
             SuperSamplingMode::Never => {
                 slice_count = 1;
             },
             SuperSamplingMode::IfAboveTargetDelta => {
-                let ratio_t = delta / cfg_bind.target_delta;
+                let ratio_t = delta / cast_fidelity_cfg_bind.target_delta;
                 if ratio_t > 1.0 {
-                    slice_count = max(ceilf(ratio_t) as i64, cfg_bind.max_supersampling);
+                    slice_count = max(ceilf(ratio_t) as i64, cast_fidelity_cfg_bind.max_supersampling);
                 } else {
                     slice_count = 1;
                 }
             },
             SuperSamplingMode::IfTooLong => {
-                let ratio_l = estimated_dist / cfg_bind.target_length;
+                let ratio_l = estimated_dist / cast_fidelity_cfg_bind.target_length;
                 if ratio_l > 1.0 {
-                    slice_count = max(ceilf(ratio_l) as i64, cfg_bind.max_supersampling);
+                    slice_count = max(ceilf(ratio_l) as i64, cast_fidelity_cfg_bind.max_supersampling);
                 } else {
                     slice_count = 1;
                 }
             },
             SuperSamplingMode::IfAboveTargetDeltaOrTooLong => {
                 let mut tmp: i64 = 1;
-                let ratio_t = delta / cfg_bind.target_delta;
+                let ratio_t = delta / cast_fidelity_cfg_bind.target_delta;
                 if ratio_t > 1.0 {
                     tmp = max(tmp, ceilf(ratio_t) as i64);
                 }
-                let ratio_l = estimated_dist / cfg_bind.target_length;
+                let ratio_l = estimated_dist / cast_fidelity_cfg_bind.target_length;
                 if ratio_l > 1.0 {
                     tmp = max(tmp, ceilf(ratio_l) as i64);
                 }
-                slice_count = max(tmp, cfg_bind.max_supersampling);
+                slice_count = max(tmp, cast_fidelity_cfg_bind.max_supersampling);
             },
         }
+        drop(cast_fidelity_cfg_bind);
         drop(cfg_bind);
         let sliced_delta = delta / (slice_count as f64);
         for _ in 0..slice_count {
@@ -157,11 +188,10 @@ impl FluoriteCast {
     }
     #[func]
     pub fn evaluate_raw(&mut self, delta: f64) -> () {
-        // TODO: Modify velocity later when we add acceleration
         match self.gravity_cache {
             None => {
-                let gravity_behavior = self.config.bind().gravity_behavior;
-                let gravity_multiplier = self.config.bind().gravity_multiplier;
+                let gravity_behavior = self.config.bind().cast_gravity_cfg.as_ref().expect("Should always exist").bind().gravity_behavior;
+                let gravity_multiplier = self.config.bind().cast_gravity_cfg.as_ref().expect("Should always exist").bind().gravity_multiplier;
                 match gravity_behavior {
                     GravityBehavior::UseGlobalGravityRealTime | GravityBehavior::UseCurrentGravityRealTime => {
                         // `get_gravity` returns global gravity if `CollisionShape3D` is missing
@@ -171,8 +201,43 @@ impl FluoriteCast {
                 }
             },
             Some(g) => {
-                let gravity_multiplier = self.config.bind().gravity_multiplier;
+                let gravity_multiplier = self.config.bind().cast_gravity_cfg.as_ref().expect("Should always exist").bind().gravity_multiplier;
                 self.current_velocity += (g*(gravity_multiplier as f32) + self.current_acceleration)*(delta as f32);
+            },
+        }
+        let self_config_binding = self.config.bind();
+        let fluid_dynamics_cfg_bind = self_config_binding.fluid_dynamics_cfg.as_ref().expect("Should always exist").bind();
+        let fluid_dynamics_fidelity = fluid_dynamics_cfg_bind.fluid_dynamics_fidelity;
+        let fluid_dynamics_behavior = fluid_dynamics_cfg_bind.fluid_dynamics_behavior;
+        drop(fluid_dynamics_cfg_bind);
+        drop(self_config_binding);
+        let ambient_airspeed = self.ambient_airspeed_cache.unwrap_or_else(|| {
+            match fluid_dynamics_behavior {
+                FluidDynamicsBehavior::UseGlobalFluidRealTime => {
+                    self.get_global_fluid_config().bind().ambient_airspeed
+                },
+                FluidDynamicsBehavior::UseCurrentFluidRealTime => {
+                    self.get_current_fluid_config().bind().ambient_airspeed
+                },
+                _ => {
+                    panic!("fluid_dynamics_behavior was not *RealTime while ambient_airspeed_cache was None!")
+                },
+            }
+        });
+        match fluid_dynamics_fidelity {
+            FluidDynamicsFidelity::Ignore => {}, // No-op
+            FluidDynamicsFidelity::OnlyAmbientAirspeed => {
+                self.current_velocity += ambient_airspeed;
+            },
+            FluidDynamicsFidelity::ReynoldsNumber => {
+                self.current_velocity += ambient_airspeed;
+                let external_airspeed = self.current_velocity - ambient_airspeed;
+                self.current_velocity += self.compute_drag_reynolds(external_airspeed.length() as f64, external_airspeed.normalized());
+            },
+            FluidDynamicsFidelity::Full => {
+                self.current_velocity += ambient_airspeed;
+                let external_airspeed = self.current_velocity - ambient_airspeed;
+                self.current_velocity += self.compute_drag_full(external_airspeed.length() as f64, external_airspeed.normalized());
             },
         }
         let vel = self.current_velocity;
@@ -203,6 +268,86 @@ impl FluoriteCast {
     #[func]
     pub fn get_config(&self) -> Gd<FluoriteCastConfig> {
         self.config.clone()
+    }
+    #[func]
+    pub fn compute_drag_full(&self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
+        // The general idea is as follows:
+        // drag = -0.5 * gas_density * airspeed^2 * ref_area * drag_coefficient * airspeed_unit_vector
+        // where drag_coefficient = airspeed / (dynamic_viscosity / gas_density) * some_curve.map_to(airspeed / speed_of_sound)
+        // => therefore drag = -0.5 * ref_area * airspeed^3 * gas_density^2 / dynamic_viscosity * airspeed_unit_vector * some_curve.map_to(airspeed / speed_of_sound)
+        // where gas_density + ref_area + dynamic_viscosity + speed_of_sound is const
+        // where airspeed + airspeed_unit_vector is mut
+        // where some_curve is Curve
+        self.compute_drag_reynolds(airspeed, airspeed_unit_vector) * (self.compute_drag_dyn_component_mach(airspeed) as f32)
+    } 
+    #[func]
+    pub fn compute_drag_reynolds(&self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
+        self.get_drag_const_component() as f32 * self.compute_drag_dyn_component_reynolds(airspeed, airspeed_unit_vector)
+    } 
+    #[func]
+    pub fn compute_drag_const_component(&self, with_fluid_cfg: Gd<FluoriteFluidConfig>) -> f64 {
+        let binding = self.config.bind();
+        let current_fluid_cfg = with_fluid_cfg.bind();
+        let fluid_dynamics_cfg = binding.fluid_dynamics_cfg.as_ref().expect("Should always exist").bind();
+
+        -0.5
+        * fluid_dynamics_cfg.projectile_reference_area
+        * current_fluid_cfg.fluid_density_kgm3 * current_fluid_cfg.fluid_density_kgm3
+        / (current_fluid_cfg.dynamic_viscosity_upas * 1000.0 * 1000.0) // uPa*s -> Pa*s
+    }
+    #[func]
+    pub fn compute_drag_dyn_component_reynolds(&self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
+        (airspeed * airspeed * airspeed) as f32 * airspeed_unit_vector
+    }
+    #[func]
+    pub fn compute_drag_dyn_component_mach(&self, airspeed: f64) -> f64 {
+        if let Some(curve) = self.config.bind().fluid_dynamics_cfg.as_ref().expect("Should always exist").bind().mach_based_drag_multiplier.as_ref() {
+            curve.sample(self.get_mach_number(airspeed) as f32) as f64
+        } else {
+            1.0
+        }
+    }
+    #[func]
+    pub fn get_mach_number(&self, airspeed: f64) -> f64 {
+        airspeed / self.speed_of_sound_cache.unwrap_or_else(|| {
+            let fluid_dynamics_behavior = self.config.bind().fluid_dynamics_cfg.as_ref().expect("Should always exist").bind().fluid_dynamics_behavior;
+            match fluid_dynamics_behavior {
+                FluidDynamicsBehavior::UseGlobalFluidRealTime => {
+                    self.get_global_fluid_config().bind().speed_of_sound
+                },
+                FluidDynamicsBehavior::UseCurrentFluidRealTime => {
+                    self.get_current_fluid_config().bind().speed_of_sound
+                },
+                _ => {
+                    panic!("fluid_dynamics_behavior was not *RealTime while speed_of_sound_cache was None!")
+                },
+            }
+        })
+    }
+    #[func]
+    pub fn get_drag_const_component(&self) -> f64 {
+        self.fluid_drag_const_cache.unwrap_or_else(|| {
+            let fluid_dynamics_behavior = self.config.bind().fluid_dynamics_cfg.as_ref().expect("Should always exist").bind().fluid_dynamics_behavior;
+            match fluid_dynamics_behavior {
+                FluidDynamicsBehavior::UseGlobalFluidRealTime => {
+                    self.compute_drag_const_component(self.get_global_fluid_config())
+                },
+                FluidDynamicsBehavior::UseCurrentFluidRealTime => {
+                    self.compute_drag_const_component(self.get_current_fluid_config())
+                },
+                _ => {
+                    panic!("fluid_dynamics_behavior was not *RealTime while fluid_drag_const_cache was None!")
+                },
+            }
+        })
+    }
+    #[func]
+    pub fn get_current_fluid_config(&self) -> Gd<FluoriteFluidConfig> {
+        self.get_global_fluid_config()
+    }
+    #[func]
+    pub fn get_global_fluid_config(&self) -> Gd<FluoriteFluidConfig> {
+        self.global_fluid.clone().expect("Should always exist")
     }
 }
 
