@@ -227,17 +227,17 @@ impl FluoriteCast {
         match fluid_dynamics_fidelity {
             FluidDynamicsFidelity::Ignore => {}, // No-op
             FluidDynamicsFidelity::OnlyAmbientAirspeed => {
-                self.current_velocity += ambient_airspeed;
+                self.current_velocity += ambient_airspeed*(delta as f32);
             },
             FluidDynamicsFidelity::ReynoldsNumber => {
-                self.current_velocity += ambient_airspeed;
+                self.current_velocity += ambient_airspeed*(delta as f32);
                 let external_airspeed = self.current_velocity - ambient_airspeed;
-                self.current_velocity += self.compute_drag_reynolds(external_airspeed.length() as f64, external_airspeed.normalized());
+                self.current_velocity += self.compute_drag_reynolds(external_airspeed.length() as f64, external_airspeed.normalized())*(delta as f32);
             },
             FluidDynamicsFidelity::Full => {
-                self.current_velocity += ambient_airspeed;
+                self.current_velocity += ambient_airspeed*(delta as f32);
                 let external_airspeed = self.current_velocity - ambient_airspeed;
-                self.current_velocity += self.compute_drag_full(external_airspeed.length() as f64, external_airspeed.normalized());
+                self.current_velocity += self.compute_drag_full(external_airspeed.length() as f64, external_airspeed.normalized())*(delta as f32);
             },
         }
         let vel = self.current_velocity;
