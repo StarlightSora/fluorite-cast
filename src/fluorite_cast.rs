@@ -100,6 +100,7 @@ impl FluoriteCast {
             FluidDynamicsBehavior::UseGlobalFluidCached => {
                 let global_fluid = new_node_bind.get_global_fluid_config();
                 new_node_bind.speed_of_sound_cache.replace(global_fluid.bind().speed_of_sound);
+                new_node_bind.ambient_airspeed_cache.replace(global_fluid.bind().ambient_airspeed);
                 let computed_const_component = new_node_bind.compute_drag_const_component(global_fluid);
                 new_node_bind.fluid_drag_const_cache.replace(computed_const_component);
             },
@@ -275,6 +276,7 @@ impl FluoriteCast {
         // drag = -0.5 * gas_density * airspeed^2 * ref_area * drag_coefficient * airspeed_unit_vector
         // where drag_coefficient = airspeed / (dynamic_viscosity / gas_density) * some_curve.map_to(airspeed / speed_of_sound)
         // => therefore drag = -0.5 * ref_area * airspeed^3 * gas_density^2 / dynamic_viscosity * airspeed_unit_vector * some_curve.map_to(airspeed / speed_of_sound)
+        // => therefore drag = (-0.5 * ref_area * gas_density^2 / dynamic_viscosity) * (airspeed^3 * airspeed_unit_vector) * some_curve.map_to(airspeed / speed_of_sound)
         // where gas_density + ref_area + dynamic_viscosity + speed_of_sound is const
         // where airspeed + airspeed_unit_vector is mut
         // where some_curve is Curve

@@ -69,8 +69,8 @@ impl FluoriteFluidConfig {
         Gd::from_init_fn(|base| {
             Self {
                 base,
-                fluid_density_kgm3: 0.0,
-                dynamic_viscosity_upas: 0.0,
+                fluid_density_kgm3: 0.0001,
+                dynamic_viscosity_upas: 0.0001,
                 speed_of_sound: 299792458.0, // 1c as placeholder
                 ambient_airspeed: Vector3::ZERO,
             }
