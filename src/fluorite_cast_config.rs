@@ -71,11 +71,12 @@ pub enum FluidDynamicsFidelity {
 #[class(init, base=Resource)]
 pub struct FluoriteCastCfgFluidDynamics {
     base: Base<Resource>,
+    #[export]
     pub fluid_dynamics_behavior: FluidDynamicsBehavior,
     #[export]
     pub fluid_dynamics_fidelity: FluidDynamicsFidelity,
     #[export]
-    #[init(val = 0.1)]
+    #[init(val = 1.0)]
     pub projectile_reference_area: f64, // We assume the reference area is a constant so we don't have to do needlessly expensive realtime computation
     #[export]
     pub mach_based_drag_multiplier: Option<Gd<Curve>>,
@@ -99,7 +100,7 @@ impl FluoriteCastCfgFluidDynamics {
                 base,
                 fluid_dynamics_behavior: FluidDynamicsBehavior::default(),
                 fluid_dynamics_fidelity: FluidDynamicsFidelity::default(),
-                projectile_reference_area: 0.1,
+                projectile_reference_area: 1.0,
                 mach_based_drag_multiplier: None,
             }
         })
