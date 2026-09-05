@@ -1,14 +1,11 @@
 use godot::{
     classes::{
-        CollisionShape3D,
-        IStaticBody3D,
-        ProjectSettings,
-        StaticBody3D,
-    },
-    global::ceilf,
-    prelude::*,
+        CollisionShape3D, IStaticBody3D, PhysicsRayQueryParameters3D, PhysicsShapeQueryParameters3D, ProjectSettings, StaticBody3D,
+    }, global::{ceilf, push_warning}, prelude::*,
 };
 use core::cmp::max;
+
+use crate::fluorite_cast_config::CollisionDetectionMode;
 
 use super::fluorite_fluid_config::FluoriteFluidConfig;
 
@@ -20,6 +17,55 @@ use super::fluorite_cast_config::{
     FluidDynamicsBehavior,
     FluidDynamicsFidelity,
 };
+
+enum SpaceCastResult {
+    HitNothing,
+    HitByRaycast(VarDictionary),
+    HitByShapecast(VarDictionary),
+}
+
+#[derive(GodotClass)]
+#[class(init, base=RefCounted)]
+pub struct FluoriteSpaceCastResult {
+    base: Base<RefCounted>,
+    #[var]
+    position: Vector3,
+    #[var]
+    normal: Vector3,
+    #[var]
+    rid: i64,
+    #[var]
+    collider: Option<Gd<Node3D>>,
+    #[var]
+    collider_id: i64,
+    #[var]
+    shape: i64,
+}
+
+#[godot_api]
+impl FluoriteSpaceCastResult {
+    #[func]
+    pub fn new_result(
+        position: Vector3,
+        normal: Vector3,
+        rid: i64,
+        collider: Option<Gd<Node3D>>,
+        collider_id: i64,
+        shape: i64
+    ) -> Gd<FluoriteSpaceCastResult> {
+        Gd::from_init_fn(|base| {
+            Self {
+                base,
+                position,
+                normal,
+                rid,
+                collider,
+                collider_id,
+                shape,
+            }
+        })
+    }
+}
 
 #[derive(GodotClass)]
 #[class(init, base=StaticBody3D)]
@@ -242,9 +288,15 @@ impl FluoriteCast {
             },
         }
         let vel = self.current_velocity;
-        let mut base_mut = self.base_mut();
-        let starting_pos = base_mut.get_position();
+        let base = self.base();
+        let starting_pos = base.get_position();
+        drop(base);
         let dist = vel*(delta as f32);
+        let res = self.try_intersect(starting_pos, starting_pos + dist);
+        if res.is_some() {
+            godot_print!("Got an intersection");
+        }
+        let mut base_mut = self.base_mut();
         base_mut.set_global_position(starting_pos + dist);
         drop(base_mut);
         self.alive_for += delta;
@@ -340,6 +392,110 @@ impl FluoriteCast {
                 },
             }
         })
+    }
+    #[func]
+    pub fn try_intersect(&self, from: Vector3, to: Vector3) -> Option<Gd<FluoriteSpaceCastResult>> { // TODO: Probably should return a custom struct
+        let binding = self.config.bind();
+        let hit_detection_cfg = binding.cast_hit_detection_cfg.as_ref().expect("Should always exist").bind();
+        let space_cast_result = match hit_detection_cfg.collision_detection_mode {
+            CollisionDetectionMode::Ignore => { SpaceCastResult::HitNothing },
+            CollisionDetectionMode::ByRaycast => {
+                let mut direct_space = self.base().get_world_3d().expect("Should exist").get_direct_space_state().expect("Should exist");
+                let mut query_params = PhysicsRayQueryParameters3D::new_gd();
+                query_params.set_from(from);
+                query_params.set_to(to);
+                // TODO: Maybe cache query_params into the struct itself upon costruction and wrap it in a `Cow` or something like that?? 
+                // It's kind of stupid to reconstruct this entire thing every single time
+                query_params.set_collision_mask(hit_detection_cfg.hit_collision_mask);
+                query_params.set_collide_with_areas(hit_detection_cfg.should_collide_with_areas);
+                query_params.set_collide_with_bodies(hit_detection_cfg.should_collide_with_bodies);
+                query_params.set_hit_back_faces(hit_detection_cfg.should_hit_back_faces);
+                query_params.set_hit_from_inside(hit_detection_cfg.should_hit_from_inside);
+                query_params.set_exclude(&array![self.base().get_rid()]); // TODO: Apply exclude_list_paths in cfg (maybe cache this first)
+                let res = direct_space.intersect_ray(&query_params);
+                if res.contains_key("normal") {
+                    SpaceCastResult::HitByRaycast(res)
+                } else {
+                    SpaceCastResult::HitNothing
+                }
+            },
+            CollisionDetectionMode::ByShapecast => {
+                let mut direct_space = self.base().get_world_3d().expect("Should exist").get_direct_space_state().expect("Should exist");
+                let mut query_params = PhysicsShapeQueryParameters3D::new_gd();
+                let diff_v3 = to - from;
+                query_params.set_motion(diff_v3);
+                query_params.set_transform(Transform3D::new(
+                    hit_detection_cfg.shape_basis
+                    * Basis::looking_at(self.current_velocity),
+                    from
+                )); // TODO: Basis::looking_at is a possible placeholder, recheck later
+                query_params.set_collision_mask(hit_detection_cfg.hit_collision_mask);
+                query_params.set_collide_with_areas(hit_detection_cfg.should_collide_with_areas);
+                query_params.set_collide_with_bodies(hit_detection_cfg.should_collide_with_bodies);
+                query_params.set_shape(hit_detection_cfg.hit_shape.as_ref().expect("hit_shape should always exist"));
+                query_params.set_margin(hit_detection_cfg.shape_margin as f32);
+                query_params.set_exclude(&array![self.base().get_rid()]); // TODO: Apply exclude_list_paths in cfg (maybe cache this first)
+                let proportions = direct_space.cast_motion(&query_params);
+                let safe_proportion = proportions.get(0).expect("get(0) should be Some, is hit_shape null?");
+                if safe_proportion >= 1.0 {
+                    SpaceCastResult::HitNothing
+                } else {
+                    let unsafe_proportion = proportions.get(1).expect("get(1) should be Some");
+                    query_params.set_transform(Transform3D::new(
+                        hit_detection_cfg.shape_basis
+                        * Basis::looking_at(self.current_velocity),
+                        from + (diff_v3*(unsafe_proportion as f32))
+                    ));
+                    let mut res = direct_space.get_rest_info(&query_params);
+
+                    if res.contains_key("normal") {
+                        let res_cid: i64 = res.get("collider_id").expect("Should exist").try_to().expect("Should be an i64");
+                        let mut res_creal = None;
+                        let res2 = direct_space.intersect_shape(&query_params);
+                        for entry in res2.iter_shared() {
+                            if entry.get("collider_id").as_ref().is_some_and(|x| x.try_to::<i64>().expect("Should be an i64") == res_cid) {
+                                res_creal.replace(entry.get("collider").expect("Should exist"));
+                                break;
+                            }
+                        }
+                        if res_creal.is_some() {
+                            let _ = res.insert("collider", &res_creal.expect("Checked above"));
+                        } else {
+                            push_warning(&["Could not infer collider, so `collider` will be null".to_variant()]);
+                        }
+                        SpaceCastResult::HitByShapecast(res)
+                    } else {
+                        SpaceCastResult::HitNothing
+                    }
+                }
+            },
+        };
+
+        match space_cast_result {
+            SpaceCastResult::HitNothing => { None },
+            SpaceCastResult::HitByRaycast(res) => {
+                // collider, collider_id, normal, position, face_index, rid, shape
+                Some(FluoriteSpaceCastResult::new_result(
+                    res.get("position").unwrap().to(),
+                    res.get("normal").unwrap().to(),
+                    res.get("rid").unwrap().to::<Rid>().to_u64() as i64,
+                    res.get("collider").map(|some| some.to()),
+                    res.get("collider_id").unwrap().to(),
+                    res.get("shape").unwrap().to(),
+                ))
+            },
+            SpaceCastResult::HitByShapecast(res) => {
+                // collider (injected manually), collider_id, linear_velocity, normal, point, rid, shape
+                Some(FluoriteSpaceCastResult::new_result(
+                    res.get("point").unwrap().to(),
+                    res.get("normal").unwrap().to(),
+                    res.get("rid").unwrap().to::<Rid>().to_u64() as i64,
+                    res.get("collider").map(|some| some.to()),
+                    res.get("collider_id").unwrap().to(),
+                    res.get("shape").unwrap().to(),
+                ))
+            },
+        }
     }
     #[func]
     pub fn get_current_fluid_config(&self) -> Gd<FluoriteFluidConfig> {

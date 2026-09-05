@@ -232,8 +232,8 @@ pub struct FluoriteCastCfgHitDetection {
     #[export]
     pub shape_margin: f64,
     #[export]
-    #[init(val = Transform3D::IDENTITY)]
-    pub shape_transform: Transform3D,
+    #[init(val = Basis::IDENTITY)]
+    pub shape_basis: Basis,
     #[export]
     #[init(val = true)]
     pub should_hit_back_faces: bool,
@@ -254,7 +254,7 @@ impl FluoriteCastCfgHitDetection {
         exclude_list_paths: Array<NodePath>,
         hit_shape: Option<Gd<Shape3D>>,
         shape_margin: f64,
-        shape_transform: Transform3D,
+        shape_basis: Basis,
         should_hit_back_faces: bool,
         should_hit_from_inside: bool,
         should_collide_with_areas: bool,
@@ -268,7 +268,7 @@ impl FluoriteCastCfgHitDetection {
                 exclude_list_paths,
                 hit_shape,
                 shape_margin,
-                shape_transform,
+                shape_basis,
                 should_hit_back_faces,
                 should_hit_from_inside,
                 should_collide_with_areas,
@@ -285,7 +285,7 @@ impl FluoriteCastCfgHitDetection {
                 exclude_list_paths: array![],
                 hit_shape: None,
                 shape_margin: 0.0,
-                shape_transform: Transform3D::IDENTITY,
+                shape_basis: Basis::IDENTITY,
                 should_hit_back_faces: true,
                 should_hit_from_inside: false,
                 should_collide_with_areas: false,
@@ -302,7 +302,7 @@ impl FluoriteCastCfgHitDetection {
                 exclude_list_paths,
                 hit_shape: None,
                 shape_margin: 0.0,
-                shape_transform: Transform3D::IDENTITY,
+                shape_basis: Basis::IDENTITY,
                 should_hit_back_faces: true,
                 should_hit_from_inside: false,
                 should_collide_with_areas: false,
@@ -319,7 +319,7 @@ impl FluoriteCastCfgHitDetection {
                 exclude_list_paths,
                 hit_shape: Some(hit_shape),
                 shape_margin: 0.0,
-                shape_transform: Transform3D::IDENTITY,
+                shape_basis: Basis::IDENTITY,
                 should_hit_back_faces: true,
                 should_hit_from_inside: false,
                 should_collide_with_areas: false,
@@ -336,7 +336,7 @@ impl FluoriteCastCfgHitDetection {
                 exclude_list_paths: array![],
                 hit_shape: None,
                 shape_margin: 0.0,
-                shape_transform: Transform3D::IDENTITY,
+                shape_basis: Basis::IDENTITY,
                 should_hit_back_faces: true,
                 should_hit_from_inside: false,
                 should_collide_with_areas: false,
