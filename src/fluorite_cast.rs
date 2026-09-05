@@ -20,8 +20,8 @@ use super::fluorite_cast_config::{
 
 enum SpaceCastResult {
     HitNothing,
-    HitByRaycast(VarDictionary),
-    HitByShapecast(VarDictionary),
+    HitByRaycast(VarDictionary, Vector3),
+    HitByShapecast(VarDictionary, Vector3),
 }
 
 #[derive(GodotClass)]
@@ -40,6 +40,8 @@ pub struct FluoriteSpaceCastResult {
     collider_id: i64,
     #[var]
     shape: i64,
+    #[var]
+    march_by: Vector3,
 }
 
 #[godot_api]
@@ -51,7 +53,8 @@ impl FluoriteSpaceCastResult {
         rid: i64,
         collider: Option<Gd<Node3D>>,
         collider_id: i64,
-        shape: i64
+        shape: i64,
+        march_by: Vector3,
     ) -> Gd<FluoriteSpaceCastResult> {
         Gd::from_init_fn(|base| {
             Self {
@@ -62,6 +65,7 @@ impl FluoriteSpaceCastResult {
                 collider,
                 collider_id,
                 shape,
+                march_by,
             }
         })
     }
@@ -76,6 +80,8 @@ pub struct FluoriteCast {
     ambient_airspeed_cache: Option<Vector3>,
     speed_of_sound_cache: Option<f64>,
     fluid_drag_const_cache: Option<f64>,
+    disabled: bool,
+    is_cleaning_up: bool,
     config: Gd<FluoriteCastConfig>,
     #[var]
     current_velocity: Vector3,
@@ -99,6 +105,9 @@ impl FluoriteCast {
     #[signal]
     fn terminated(this: Gd<FluoriteCast>, cast_result: Gd<FluoriteSpaceCastResult>);
 
+    #[signal]
+    fn expired(this: Gd<FluoriteCast>);
+
     #[func]
     pub fn new_cast(&mut parent_to: Gd<Node3D>, payload: Option<Gd<Node3D>>, config: Gd<FluoriteCastConfig>, global_fluid: Gd<FluoriteFluidConfig>, custom_data: VarDictionary) -> Gd<Self> {
         let mut new_node = Gd::from_init_fn(|base| {
@@ -116,6 +125,8 @@ impl FluoriteCast {
                 alive_for: 0.0f64,
                 global_fluid: Some(global_fluid),
                 custom_data,
+                disabled: false,
+                is_cleaning_up: false,
             }
         });
         // The base needs to be `StaticBody3D`, and a `CollisionShape3D` is needed so we can use `get_gravity` for `UseCurrentGravityRealTime` mode
@@ -192,7 +203,10 @@ impl FluoriteCast {
         self.current_velocity += by;
     }
     #[func]
-    pub fn evaluate(&mut self, delta: f64) -> () {
+    pub fn evaluate(&mut self, delta: f64, forced: bool) -> () {
+        if self.disabled && !forced {
+            return
+        };
         let vel = self.current_velocity;
         let estimated_dist = (vel*(delta as f32)).length() as f64;
         let slice_count: i64;
@@ -235,12 +249,19 @@ impl FluoriteCast {
         drop(cfg_bind);
         let sliced_delta = delta / (slice_count as f64);
         for _ in 0..slice_count {
-            self.evaluate_raw(sliced_delta);
+            self.evaluate_raw(sliced_delta, forced, false, Vector3::ZERO, 1);
         }
-        self.maybe_free();
+        self.try_expire();
     }
     #[func]
-    pub fn evaluate_raw(&mut self, delta: f64) -> () {
+    pub fn evaluate_raw(&mut self, delta: f64, forced: bool, override_dist: bool, overridden_dist_v3: Vector3, recursion_depth: i64) -> () {
+        if self.disabled && !forced {
+            return
+        };
+        if recursion_depth > 16 {
+            godot_warn!("Recursion depth of 16 exceeded in evaluate_raw!");
+            return
+        }
         match self.gravity_cache {
             None => {
                 let gravity_behavior = self.config.bind().cast_gravity_cfg.as_ref().expect("Should always exist").bind().gravity_behavior;
@@ -297,15 +318,16 @@ impl FluoriteCast {
         let base = self.base();
         let starting_pos = base.get_position();
         drop(base);
-        let dist = vel*(delta as f32);
+        let dist = match override_dist {
+            true => { overridden_dist_v3 },
+            false => { vel*(delta as f32) },
+        };
 
         let res = self.try_intersect(starting_pos, starting_pos + dist); // TODO: Finish integrating this
         if let Some(cast_result) = res {
             godot_print!("Got an intersection");
             let has_penetrated = self.try_penetrate(cast_result.clone());
             // enable these again if we find the need to do so
-            //let self_config_binding = self.config.bind();
-            //let cast_on_hit_cfg_bind = self_config_binding.cast_on_hit_cfg.as_ref().expect("Should always exist").bind();
 
             let self_clo = self.object_to_owned().clone();
             if !has_penetrated {
@@ -313,31 +335,49 @@ impl FluoriteCast {
                 base_mut.set_global_position(cast_result.bind().position);
                 drop(base_mut);
                 self.signals().terminated().emit_tuple((self_clo, cast_result)); // tail of block, so no need to clone cast_result
+
+                let self_config_binding = self.config.bind();
+                let cast_on_hit_cfg_bind = self_config_binding.cast_on_hit_cfg.as_ref().expect("Should always exist").bind();
+                let should_cleanup = cast_on_hit_cfg_bind.auto_queue_free_on_terminate;
+                drop(cast_on_hit_cfg_bind);
+                drop(self_config_binding);
+                self.disabled = true;
+                if should_cleanup {
+                    self.cleanup();
+                }
                 // TODO: do some stuff I guess:
-                // set position to hit position
-                // downstream code should not execute, and future evaluate calls should be silently dropped
-                // queue_free if programmed to do so, otherwise the caller needs to free it explicitly
+                // set position to hit position (done)
+                // downstream code should not execute (done), and future evaluate calls should be silently dropped (done)
+                // queue_free if programmed to do so, otherwise the caller needs to free it explicitly (done)
             } else {
                 let mut base_mut = self.base_mut();
                 base_mut.set_global_position(cast_result.bind().position);
                 drop(base_mut);
-                self.signals().penetrated().emit_tuple((self_clo, cast_result));
+                self.signals().penetrated().emit_tuple((self_clo, cast_result.clone()));
                 // TODO: do some other stuff I guess:
-                // set position to hit position
-                // downstream code should not execute (so we don't tunnel through another collider behind the one we just hit)
-                // maybe they should keep executing anyway but by accomodating for that collision so we don't make the projectile pay every frame per collider penetrated
-                // future evaluations keep working of course
+                // set position to hit position (done)
+                //~~ downstream code should not execute (so we don't tunnel through another collider behind the one we just hit)~~ (dropped)
+                // maybe they should keep executing anyway but by accomodating for that collision so we don't make the projectile pay every frame per collider penetrated (done)
+                // future evaluations keep working of course (done)
+                if !override_dist {
+                    self.alive_for += delta;
+                    self.distance_covered += dist.length();
+                }
+                // We recurse with a smaller slice to keep casting in this frame
+                self.evaluate_raw(0.0, forced, true, cast_result.bind().march_by, recursion_depth + 1);
+            }
+        } else {
+            let mut base_mut = self.base_mut();
+            base_mut.set_global_position(starting_pos + dist);
+            drop(base_mut);
+            if !override_dist {
+                self.alive_for += delta;
+                self.distance_covered += dist.length();
             }
         }
-
-        let mut base_mut = self.base_mut();
-        base_mut.set_global_position(starting_pos + dist);
-        drop(base_mut);
-        self.alive_for += delta;
-        self.distance_covered += dist.length();
     }
     #[func]
-    pub fn maybe_free(&mut self) -> () {
+    pub fn try_expire(&mut self) -> () {
         let alive_for = self.alive_for;
         let distance_covered = self.distance_covered;
         let cfg_bind = self.config.bind();
@@ -349,8 +389,15 @@ impl FluoriteCast {
         } else { should_free = false }
         drop(cfg_bind);
         if should_free {
-            self.base_mut().queue_free();
+            let self_clo = self.object_to_owned();
+            self.signals().expired().emit(&self_clo); // I have no idea `emit` wants Gd<_> passed by reference, but `emit_tuple` by value??? But OK.
+            self.cleanup();
         }
+    }
+    #[func]
+    pub fn cleanup(&mut self) -> () {
+        self.is_cleaning_up = true;
+        self.base_mut().queue_free();
     }
     #[func]
     pub fn get_config(&self) -> Gd<FluoriteCastConfig> {
@@ -487,7 +534,8 @@ impl FluoriteCast {
                 query_params.set_exclude(&array![self.base().get_rid()]); // TODO: Apply exclude_list_paths in cfg (maybe cache this first)
                 let res = direct_space.intersect_ray(&query_params);
                 if res.contains_key("normal") {
-                    SpaceCastResult::HitByRaycast(res)
+                    let res_pos = res.get("position").expect("position should always exist").to::<Vector3>();
+                    SpaceCastResult::HitByRaycast(res, res_pos - from)
                 } else {
                     SpaceCastResult::HitNothing
                 }
@@ -514,10 +562,11 @@ impl FluoriteCast {
                     SpaceCastResult::HitNothing
                 } else {
                     let unsafe_proportion = proportions.get(1).expect("get(1) should be Some");
+                    let unsafe_march = diff_v3*(unsafe_proportion as f32);
                     query_params.set_transform(Transform3D::new(
                         hit_detection_cfg.shape_basis
                         * Basis::looking_at(self.current_velocity),
-                        from + (diff_v3*(unsafe_proportion as f32))
+                        from + unsafe_march
                     ));
                     let mut res = direct_space.get_rest_info(&query_params);
 
@@ -538,7 +587,7 @@ impl FluoriteCast {
                         } else {
                             push_warning(&["Could not infer collider, so `collider` will be null".to_variant()]);
                         }
-                        SpaceCastResult::HitByShapecast(res)
+                        SpaceCastResult::HitByShapecast(res, unsafe_march)
                     } else {
                         SpaceCastResult::HitNothing
                     }
@@ -548,7 +597,7 @@ impl FluoriteCast {
 
         match space_cast_result {
             SpaceCastResult::HitNothing => { None },
-            SpaceCastResult::HitByRaycast(res) => {
+            SpaceCastResult::HitByRaycast(res, marched_by) => {
                 // collider, collider_id, normal, position, face_index, rid, shape
                 Some(FluoriteSpaceCastResult::new_result(
                     res.get("position").unwrap().to(),
@@ -557,9 +606,10 @@ impl FluoriteCast {
                     res.get("collider").map(|some| some.to()),
                     res.get("collider_id").unwrap().to(),
                     res.get("shape").unwrap().to(),
+                    marched_by,
                 ))
             },
-            SpaceCastResult::HitByShapecast(res) => {
+            SpaceCastResult::HitByShapecast(res, marched_by) => {
                 // collider (injected manually), collider_id, linear_velocity, normal, point, rid, shape
                 Some(FluoriteSpaceCastResult::new_result(
                     res.get("point").unwrap().to(),
@@ -568,6 +618,7 @@ impl FluoriteCast {
                     res.get("collider").map(|some| some.to()),
                     res.get("collider_id").unwrap().to(),
                     res.get("shape").unwrap().to(),
+                    marched_by,
                 ))
             },
         }
@@ -590,7 +641,7 @@ impl IStaticBody3D for FluoriteCast {
             can_do = true;
         }
         if can_do {
-            self.evaluate(delta);
+            self.evaluate(delta, false);
         }
     }
     fn physics_process(&mut self, delta: f64) {
@@ -599,7 +650,7 @@ impl IStaticBody3D for FluoriteCast {
             can_do = true;
         }
         if can_do {
-            self.evaluate(delta);
+            self.evaluate(delta, false);
         }
     }
 }
