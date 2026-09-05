@@ -9,9 +9,9 @@ pub struct FluoriteFluidConfig {
     #[export]
     #[init(val = 1.164)]
     pub fluid_density_kgm3: f64, // kg/m3 scalar
-    #[export]
-    #[init(val = 30.6)]
-    pub dynamic_viscosity_upas: f64, // uPa*s scalar (NOT Pa*s)
+    //#[export]
+    //#[init(val = 30.6)]
+    //pub dynamic_viscosity_upas: f64, // uPa*s scalar (NOT Pa*s) // NO LONGER NEEDED
     #[export]
     #[init(val = 332.0)]
     pub speed_of_sound: f64, // m/s scalar
@@ -22,12 +22,11 @@ pub struct FluoriteFluidConfig {
 #[godot_api]
 impl FluoriteFluidConfig {
     #[func]
-    fn new_config(fluid_density_kgm3: f64, dynamic_viscosity_upas: f64, speed_of_sound: f64, ambient_airspeed: Vector3) -> Gd<Self> {
+    fn new_config(fluid_density_kgm3: f64, speed_of_sound: f64, ambient_airspeed: Vector3) -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
                 base,
                 fluid_density_kgm3,
-                dynamic_viscosity_upas,
                 speed_of_sound,
                 ambient_airspeed,
             }
@@ -40,7 +39,6 @@ impl FluoriteFluidConfig {
             Self {
                 base,
                 fluid_density_kgm3: 1.164,
-                dynamic_viscosity_upas: 30.6,
                 speed_of_sound: 332.0,
                 ambient_airspeed,
             }
@@ -57,7 +55,6 @@ impl FluoriteFluidConfig {
             Self {
                 base,
                 fluid_density_kgm3: Self::gcm3_to_kgm3(0.9965),
-                dynamic_viscosity_upas: Self::mpas_to_upas(0.854),
                 speed_of_sound: 1550.0,
                 ambient_airspeed,
             }
@@ -73,7 +70,6 @@ impl FluoriteFluidConfig {
             Self {
                 base,
                 fluid_density_kgm3: 0.0001,
-                dynamic_viscosity_upas: 0.0001,
                 speed_of_sound: 299792458.0, // 1c as placeholder
                 ambient_airspeed: Vector3::ZERO,
             }
@@ -82,9 +78,5 @@ impl FluoriteFluidConfig {
     #[func]
     pub fn gcm3_to_kgm3(gcm3: f64) -> f64 {
         gcm3 * 1000.0
-    }
-    #[func]
-    pub fn mpas_to_upas(base: f64) -> f64 {
-        base * 1000.0
     }
 }

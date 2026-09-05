@@ -57,12 +57,15 @@ pub enum FluidDynamicsFidelity {
     /// Do not simulate fluid dynamics at all
     Ignore,
     /// Simulate acceleration from ambient airspeed, but do not simulate drag
+    /// This works well enough for most arcade shooters
     #[default]
     OnlyAmbientAirspeed,
-    /// Simulate ambient airspeed and calculate drag coefficient via Reynold's number only
-    ReynoldsNumber,
-    /// Simulate ambient airspeed, and calculate drag coefficient via Reynold's number + mach number
-    Full,
+    /// Simulate ambient airspeed and simulate drag with the drag coefficient constant, reference area constant, airspeed, and fluid density
+    /// This is good enough for most semi-realistic shooters
+    DragCoefficient,
+    /// Simulate ambient airspeed, and simulate drag with everything from DragCoefficient, and a multiplier based on the mach speed of the projectile
+    /// This can approximate proper fluid dynamics more closely with a fine tuned mach-based curve
+    DragCoefficientAndMach,
 }
 
 ////////////////
@@ -76,20 +79,26 @@ pub struct FluoriteCastCfgFluidDynamics {
     #[export]
     pub fluid_dynamics_fidelity: FluidDynamicsFidelity,
     #[export]
-    #[init(val = 1.0)]
-    pub projectile_reference_area: f64, // We assume the reference area is a constant so we don't have to do needlessly expensive realtime computation
+    #[init(val = 25.0)]
+    pub projectile_reference_area_mm2: f64, // We assume the reference area is a constant so we don't have to do needlessly expensive realtime computation
+    #[export]
+    #[init(val = 0.5)]
+    pub drag_coefficient: f64, // We assume the drag coefficient is *mostly* a constant for end user sanity
     #[export]
     pub mach_based_drag_multiplier: Option<Gd<Curve>>,
 }
 #[godot_api]
 impl FluoriteCastCfgFluidDynamics {
-    pub fn new_config(fluid_dynamics_behavior: FluidDynamicsBehavior, fluid_dynamics_fidelity: FluidDynamicsFidelity, projectile_reference_area: f64, mach_based_drag_multiplier: Option<Gd<Curve>>) -> Gd<Self> {
+    pub fn new_config(fluid_dynamics_behavior: FluidDynamicsBehavior, fluid_dynamics_fidelity: FluidDynamicsFidelity,
+            projectile_reference_area_mm2: f64, drag_coefficient: f64, mach_based_drag_multiplier: Option<Gd<Curve>>)
+        -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
                 base,
                 fluid_dynamics_behavior,
                 fluid_dynamics_fidelity,
-                projectile_reference_area,
+                projectile_reference_area_mm2,
+                drag_coefficient,
                 mach_based_drag_multiplier,
             }
         })
@@ -97,13 +106,18 @@ impl FluoriteCastCfgFluidDynamics {
     pub fn new_default() -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
+                // Generic 5.56x45mm NATO bullet
                 base,
                 fluid_dynamics_behavior: FluidDynamicsBehavior::default(),
                 fluid_dynamics_fidelity: FluidDynamicsFidelity::default(),
-                projectile_reference_area: 1.0,
+                projectile_reference_area_mm2: 25.0,
+                drag_coefficient: 0.5,
                 mach_based_drag_multiplier: None,
             }
         })
+    }
+    pub fn m3_to_mm3(m3: f64) -> f64 {
+        m3 * 1000.0 * 1000.0
     }
 }
 

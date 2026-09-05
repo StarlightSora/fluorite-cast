@@ -230,15 +230,15 @@ impl FluoriteCast {
             FluidDynamicsFidelity::OnlyAmbientAirspeed => {
                 self.current_velocity += ambient_airspeed*(delta as f32);
             },
-            FluidDynamicsFidelity::ReynoldsNumber => {
+            FluidDynamicsFidelity::DragCoefficient => {
                 self.current_velocity += ambient_airspeed*(delta as f32);
                 let external_airspeed = self.current_velocity - ambient_airspeed;
-                self.current_velocity += self.compute_drag_reynolds(external_airspeed.length() as f64, external_airspeed.normalized())*(delta as f32);
+                self.current_velocity += self.compute_drag_ideal(external_airspeed.length() as f64, external_airspeed.normalized())*(delta as f32);
             },
-            FluidDynamicsFidelity::Full => {
+            FluidDynamicsFidelity::DragCoefficientAndMach => {
                 self.current_velocity += ambient_airspeed*(delta as f32);
                 let external_airspeed = self.current_velocity - ambient_airspeed;
-                self.current_velocity += self.compute_drag_full(external_airspeed.length() as f64, external_airspeed.normalized())*(delta as f32);
+                self.current_velocity += self.compute_drag_full_approx(external_airspeed.length() as f64, external_airspeed.normalized())*(delta as f32);
             },
         }
         let vel = self.current_velocity;
@@ -271,27 +271,20 @@ impl FluoriteCast {
         self.config.clone()
     }
     #[func]
-    pub fn compute_drag_full(&self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
-        // TODO: Tweak this a bit, as it's not modeling physics very well
-        // We might want to map `1/Re` or `Re` to a `Curve` or `Callable` and use a builtin approximation algorithm if not provided
-        // will have to refactor compute_drag_const_component and compute_drag_dyn_component_reynolds to accomodate for this
+    pub fn compute_drag_full_approx(&self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
         // The general idea is as follows:
         // drag = -0.5 * gas_density * ref_area * airspeed^2 * drag_coefficient * airspeed_unit_vector
-        // where drag_coefficient = 1/Re * some_curve.map_to(airspeed / speed_of_sound)
-        // where Re = airspeed / (dynamic_viscosity / gas_density) = airspeed * gas_density / dynamic_viscosity
-        // Note: 1/Re is just a *relation* at *laminar flow*, not an exact expression. Typically it is 24/Re with a sphere at laminar flow
-        // The below therefores become incorrect if `1/Re` gets mapped dynamically
-        // => therefore drag_coefficient = dynamic_viscosity / airspeed / gas_density * some_curve.map_to(airspeed / speed_of_sound)
-        // => therefore drag = -0.5 * ref_area * airspeed * dynamic_viscosity * some_curve.map_to(airspeed / speed_of_sound)
-        // => therefore drag = (-0.5 * ref_area * dynamic_viscosity) * (airspeed * airspeed_unit_vector) * some_curve.map_to(airspeed / speed_of_sound)
-        // where gas_density + ref_area + dynamic_viscosity + speed_of_sound is const
-        // where airspeed + airspeed_unit_vector is mut
+        // where drag_coefficient = too_complicated_to_compute_for_this_library_so_const * some_curve.map_to(airspeed / speed_of_sound)
+        // => therefore drag = (-0.5 * gas_density * ref_area * too_complicated_to_compute_for_this_library_so_const) * (some_curve.map_to(airspeed / speed_of_sound) * airspeed^2 * airspeed_unit_vector)
+        // where the first (expr) is const, the second (expr) is dyn
+        // where gas_density + ref_area + speed_of_sound + too_complicated_to_compute_for_this_library_so_const is const
+        // where airspeed + airspeed_unit_vector is dyn
         // where some_curve is Curve
-        self.compute_drag_reynolds(airspeed, airspeed_unit_vector) * (self.compute_drag_dyn_component_mach(airspeed) as f32)
+        self.compute_drag_ideal(airspeed, airspeed_unit_vector) * (self.compute_drag_dyn_component_mach(airspeed) as f32)
     } 
     #[func]
-    pub fn compute_drag_reynolds(&self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
-        self.get_drag_const_component() as f32 * self.compute_drag_dyn_component_reynolds(airspeed, airspeed_unit_vector)
+    pub fn compute_drag_ideal(&self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
+        self.get_drag_const_component() as f32 * self.compute_drag_dyn_component_airspeed(airspeed, airspeed_unit_vector)
     } 
     #[func]
     pub fn compute_drag_const_component(&self, with_fluid_cfg: Gd<FluoriteFluidConfig>) -> f64 {
@@ -299,14 +292,12 @@ impl FluoriteCast {
         let current_fluid_cfg = with_fluid_cfg.bind();
         let fluid_dynamics_cfg = binding.fluid_dynamics_cfg.as_ref().expect("Should always exist").bind();
 
-        -0.5
-        * fluid_dynamics_cfg.projectile_reference_area
-        * current_fluid_cfg.fluid_density_kgm3 * current_fluid_cfg.fluid_density_kgm3
-        / (current_fluid_cfg.dynamic_viscosity_upas * 1000.0 * 1000.0) // uPa*s -> Pa*s // TODO: This should be `expr / 1000.0 / 1000.0``, but our entire model is not correct right now (see above TODO)
+        // mm2 -> m2 requires dividing by 1000 two times
+        -0.5 * current_fluid_cfg.fluid_density_kgm3 * (fluid_dynamics_cfg.projectile_reference_area_mm2 / 1000.0 / 1000.0) * fluid_dynamics_cfg.drag_coefficient
     }
     #[func]
-    pub fn compute_drag_dyn_component_reynolds(&self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
-        (airspeed * airspeed * airspeed) as f32 * airspeed_unit_vector
+    pub fn compute_drag_dyn_component_airspeed(&self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
+        (airspeed * airspeed) as f32 * airspeed_unit_vector
     }
     #[func]
     pub fn compute_drag_dyn_component_mach(&self, airspeed: f64) -> f64 {
