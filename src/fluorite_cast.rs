@@ -72,7 +72,7 @@ impl FluoriteCast {
         let mut new_node_bind = new_node.bind_mut();
         let collision_mask_data = new_node_bind.config.bind().area_collision_mask;
         let gravity_behavior = new_node_bind.config.bind().cast_gravity_cfg.as_ref().expect("Should always exist").bind().gravity_behavior;
-        let fluid_dynamics_behavior = new_node_bind.config.bind().fluid_dynamics_cfg.as_ref().expect("Should always exist").bind().fluid_dynamics_behavior;
+        let fluid_dynamics_behavior = new_node_bind.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("Should always exist").bind().fluid_dynamics_behavior;
         match gravity_behavior {
             GravityBehavior::Ignore => {
                 new_node_bind.gravity_cache.replace(Vector3::ZERO);
@@ -207,10 +207,10 @@ impl FluoriteCast {
             },
         }
         let self_config_binding = self.config.bind();
-        let fluid_dynamics_cfg_bind = self_config_binding.fluid_dynamics_cfg.as_ref().expect("Should always exist").bind();
-        let fluid_dynamics_fidelity = fluid_dynamics_cfg_bind.fluid_dynamics_fidelity;
-        let fluid_dynamics_behavior = fluid_dynamics_cfg_bind.fluid_dynamics_behavior;
-        drop(fluid_dynamics_cfg_bind);
+        let cast_fluid_dynamics_cfg_bind = self_config_binding.cast_fluid_dynamics_cfg.as_ref().expect("Should always exist").bind();
+        let fluid_dynamics_fidelity = cast_fluid_dynamics_cfg_bind.fluid_dynamics_fidelity;
+        let fluid_dynamics_behavior = cast_fluid_dynamics_cfg_bind.fluid_dynamics_behavior;
+        drop(cast_fluid_dynamics_cfg_bind);
         drop(self_config_binding);
         let ambient_airspeed = self.ambient_airspeed_cache.unwrap_or_else(|| {
             match fluid_dynamics_behavior {
@@ -290,10 +290,10 @@ impl FluoriteCast {
     pub fn compute_drag_const_component(&self, with_fluid_cfg: Gd<FluoriteFluidConfig>) -> f64 {
         let binding = self.config.bind();
         let current_fluid_cfg = with_fluid_cfg.bind();
-        let fluid_dynamics_cfg = binding.fluid_dynamics_cfg.as_ref().expect("Should always exist").bind();
+        let cast_fluid_dynamics_cfg = binding.cast_fluid_dynamics_cfg.as_ref().expect("Should always exist").bind();
 
         // mm2 -> m2 requires dividing by 1000 two times
-        -0.5 * current_fluid_cfg.fluid_density_kgm3 * (fluid_dynamics_cfg.projectile_reference_area_mm2 / 1000.0 / 1000.0) * fluid_dynamics_cfg.drag_coefficient
+        -0.5 * current_fluid_cfg.fluid_density_kgm3 * (cast_fluid_dynamics_cfg.projectile_reference_area_mm2 / 1000.0 / 1000.0) * cast_fluid_dynamics_cfg.drag_coefficient
     }
     #[func]
     pub fn compute_drag_dyn_component_airspeed(&self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
@@ -301,7 +301,7 @@ impl FluoriteCast {
     }
     #[func]
     pub fn compute_drag_dyn_component_mach(&self, airspeed: f64) -> f64 {
-        if let Some(curve) = self.config.bind().fluid_dynamics_cfg.as_ref().expect("Should always exist").bind().mach_based_drag_multiplier.as_ref() {
+        if let Some(curve) = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("Should always exist").bind().mach_based_drag_multiplier.as_ref() {
             curve.sample(self.get_mach_number(airspeed) as f32) as f64
         } else {
             1.0
@@ -310,7 +310,7 @@ impl FluoriteCast {
     #[func]
     pub fn get_mach_number(&self, airspeed: f64) -> f64 {
         airspeed / self.speed_of_sound_cache.unwrap_or_else(|| {
-            let fluid_dynamics_behavior = self.config.bind().fluid_dynamics_cfg.as_ref().expect("Should always exist").bind().fluid_dynamics_behavior;
+            let fluid_dynamics_behavior = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("Should always exist").bind().fluid_dynamics_behavior;
             match fluid_dynamics_behavior {
                 FluidDynamicsBehavior::UseGlobalFluidRealTime => {
                     self.get_global_fluid_config().bind().speed_of_sound
@@ -327,7 +327,7 @@ impl FluoriteCast {
     #[func]
     pub fn get_drag_const_component(&self) -> f64 {
         self.fluid_drag_const_cache.unwrap_or_else(|| {
-            let fluid_dynamics_behavior = self.config.bind().fluid_dynamics_cfg.as_ref().expect("Should always exist").bind().fluid_dynamics_behavior;
+            let fluid_dynamics_behavior = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("Should always exist").bind().fluid_dynamics_behavior;
             match fluid_dynamics_behavior {
                 FluidDynamicsBehavior::UseGlobalFluidRealTime => {
                     self.compute_drag_const_component(self.get_global_fluid_config())
