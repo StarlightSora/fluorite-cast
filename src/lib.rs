@@ -1,7 +1,7 @@
 //! To properly register the library in an existing project using godot-rust,
 //! remember to add this to your root crate's `lib.rs`:
 //! ```
-//! extern crate hooke_spring;
+//! extern crate fluorite_cast;
 //! ```
 //! 
 //! The `gdextension` `entry_symbol` of this library is `fluorite_cast`.
