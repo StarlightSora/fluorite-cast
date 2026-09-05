@@ -475,7 +475,6 @@ pub struct FluoriteCastConfig {
     pub cast_on_hit_cfg: Option<Gd<FluoriteCastCfgOnHit>>,
     #[export]
     pub custom_data: VarDictionary,
-    // TODO: start worrying about acutal ray/shapecasting soon
 }
 
 #[godot_api]

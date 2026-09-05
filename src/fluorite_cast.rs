@@ -355,7 +355,7 @@ impl FluoriteCast {
                     self.distance_covered += dist.length();
                 }
                 // We recurse with a smaller slice to keep casting in this frame
-                self.evaluate_raw(0.0, forced, true, cast_result.bind().march_by, recursion_depth + 1);
+                self.evaluate_raw(0.0, forced, true, dist - cast_result.bind().march_by, recursion_depth + 1);
             }
         } else {
             let mut base_mut = self.base_mut();
