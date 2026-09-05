@@ -1,5 +1,7 @@
 use godot::{classes::{Curve, Shape3D}, prelude::*};
 
+use super::fluorite_cast::{FluoriteCast, FluoriteSpaceCastResult};
+
 #[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
 #[godot(via = i64)]
 pub enum EvaluateMode {
@@ -81,6 +83,42 @@ pub enum CollisionDetectionMode {
     ByShapecast,
 }
 
+#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
+#[godot(via = i64)]
+pub enum AlwaysExecuteCodeVia {
+    /// Use the associated FnMut assigned to the struct, panicking if not present
+    /// Suitable for direct Rust usage
+    #[default]
+    ViaRustFnMut,
+    /// Use a method named in snake_case implemented to a Godot Resource assigned to the struct,
+    /// panicking if not present
+    /// Suitable for GDScript usage
+    ViaMethodOnResourceSnakeCase,
+    /// Use a method named in PascalCase implemented to a Godot Resource assigned to the struct,
+    /// panicking if not present
+    /// Suitable for C# usage
+    ViaMethodOnResourcePascalCase,
+}
+
+#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
+#[godot(via = i64)]
+pub enum MaybeExecuteCodeVia {
+    /// Do not execute anything and always assume the default value in its place
+    #[default]
+    NeverExecute,
+    /// Use the associated FnMut assigned to the struct, using the default value if not present
+    /// Suitable for direct Rust usage
+    ViaRustFnMut,
+    /// Use a method named in snake_case implemented to an associated Godot Resource assigned to the struct,
+    /// using the default value if not present
+    /// Suitable for GDScript usage
+    ViaMethodOnResourceSnakeCase,
+    /// Use a method named in PascalCase implemented to a Godot Resource assigned to the struct,
+    /// using the default value if not present
+    /// Suitable for C# usage
+    ViaMethodOnResourcePascalCase,
+}
+
 ////////////////
 
 #[derive(GodotClass)]
@@ -102,6 +140,7 @@ pub struct FluoriteCastCfgFluidDynamics {
 }
 #[godot_api]
 impl FluoriteCastCfgFluidDynamics {
+    #[func]
     pub fn new_config(fluid_dynamics_behavior: FluidDynamicsBehavior, fluid_dynamics_fidelity: FluidDynamicsFidelity,
             projectile_reference_area_mm2: f64, drag_coefficient: f64, mach_based_drag_multiplier: Option<Gd<Curve>>)
         -> Gd<Self> {
@@ -116,6 +155,7 @@ impl FluoriteCastCfgFluidDynamics {
             }
         })
     }
+    #[func]
     pub fn new_default() -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -152,6 +192,7 @@ pub struct FluoriteCastCfgFidelity {
 }
 #[godot_api]
 impl FluoriteCastCfgFidelity {
+    #[func]
     pub fn new_config(super_sampling_mode: SuperSamplingMode, target_delta: f64, target_length: f64, max_supersampling: i64) -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -163,6 +204,7 @@ impl FluoriteCastCfgFidelity {
             }
         })
     }
+    #[func]
     pub fn new_default() -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -194,7 +236,9 @@ pub struct FluoriteCastCfgGravity {
     #[init(val = 1.0)]
     pub gravity_multiplier: f64,
 }
+#[godot_api]
 impl FluoriteCastCfgGravity {
+    #[func]
     pub fn new_config(gravity_behavior: GravityBehavior, gravity_multiplier: f64) -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -204,6 +248,7 @@ impl FluoriteCastCfgGravity {
             }
         })
     }
+    #[func]
     pub fn new_default() -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -247,7 +292,9 @@ pub struct FluoriteCastCfgHitDetection {
     #[init(val = true)]
     pub should_collide_with_bodies: bool,
 }
+#[godot_api]
 impl FluoriteCastCfgHitDetection {
+    #[func]
     pub fn new_config(
         collision_detection_mode: CollisionDetectionMode,
         hit_collision_mask: u32,
@@ -276,6 +323,7 @@ impl FluoriteCastCfgHitDetection {
             }
         })
     }
+    #[func]
     pub fn new_ignore() -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -293,6 +341,7 @@ impl FluoriteCastCfgHitDetection {
             }
         })
     }
+    #[func]
     pub fn new_by_ray(hit_collision_mask: u32, exclude_list_paths: Array<NodePath>) -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -310,6 +359,7 @@ impl FluoriteCastCfgHitDetection {
             }
         })
     }
+    #[func]
     pub fn new_by_shape(hit_collision_mask: u32, exclude_list_paths: Array<NodePath>, hit_shape: Gd<Shape3D>) -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -327,6 +377,7 @@ impl FluoriteCastCfgHitDetection {
             }
         })
     }
+    #[func]
     pub fn new_default() -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -341,6 +392,55 @@ impl FluoriteCastCfgHitDetection {
                 should_hit_from_inside: false,
                 should_collide_with_areas: false,
                 should_collide_with_bodies: true,
+            }
+        })
+    }
+}
+
+#[derive(GodotClass)]
+#[class(init, base=Resource)]
+pub struct FluoriteCastCfgOnHit {
+    base: Base<Resource>,
+    #[export]
+    /// Needs to implement:
+    /// `try_penetrate` or `TryPenetrate` => signature `(FluoriteCast, FluoriteSpaceCastResult) -> bool`
+    pub on_hit_methods_holder: Option<Gd<Resource>>,
+
+    #[export]
+    pub try_penetrate_via: MaybeExecuteCodeVia,
+    pub try_penetrate_rs: Option<Box<dyn FnMut(Gd<FluoriteCast>, Gd<FluoriteSpaceCastResult>) -> bool>>,
+
+    #[export]
+    #[init(val = true)]
+    pub auto_queue_free_on_terminate: bool,
+}
+#[godot_api]
+impl FluoriteCastCfgOnHit {
+    #[func]
+    fn new_config(
+        on_hit_methods_holder: Option<Gd<Resource>>,
+        try_penetrate_via: MaybeExecuteCodeVia,
+        auto_queue_free_on_terminate: bool,
+    ) -> Gd<Self> {
+        Gd::from_init_fn(|base| {
+            Self {
+                base,
+                on_hit_methods_holder,
+                try_penetrate_via,
+                try_penetrate_rs: None,
+                auto_queue_free_on_terminate,
+            }
+        })
+    }
+    #[func]
+    fn new_default() -> Gd<Self> {
+        Gd::from_init_fn(|base| {
+            Self {
+                base,
+                on_hit_methods_holder: None,
+                try_penetrate_via: MaybeExecuteCodeVia::default(),
+                try_penetrate_rs: None,
+                auto_queue_free_on_terminate: true,
             }
         })
     }
@@ -372,6 +472,8 @@ pub struct FluoriteCastConfig {
     #[export]
     pub cast_hit_detection_cfg: Option<Gd<FluoriteCastCfgHitDetection>>,
     #[export]
+    pub cast_on_hit_cfg: Option<Gd<FluoriteCastCfgOnHit>>,
+    #[export]
     pub custom_data: VarDictionary,
     // TODO: start worrying about acutal ray/shapecasting soon
 }
@@ -390,6 +492,7 @@ impl FluoriteCastConfig {
         cast_fidelity_cfg: Option<Gd<FluoriteCastCfgFidelity>>,
         cast_fluid_dynamics_cfg: Option<Gd<FluoriteCastCfgFluidDynamics>>,
         cast_hit_detection_cfg: Option<Gd<FluoriteCastCfgHitDetection>>,
+        cast_on_hit_cfg: Option<Gd<FluoriteCastCfgOnHit>>,
     ) -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -403,6 +506,7 @@ impl FluoriteCastConfig {
                 cast_fidelity_cfg: Some(cast_fidelity_cfg.unwrap_or_else(|| FluoriteCastCfgFidelity::new_default())),
                 cast_fluid_dynamics_cfg: Some(cast_fluid_dynamics_cfg.unwrap_or_else(|| FluoriteCastCfgFluidDynamics::new_default())),
                 cast_hit_detection_cfg: Some(cast_hit_detection_cfg.unwrap_or_else(|| FluoriteCastCfgHitDetection::new_default())),
+                cast_on_hit_cfg: Some(cast_on_hit_cfg.unwrap_or_else(|| FluoriteCastCfgOnHit::new_default())),
                 custom_data: custom_data.clone(),
             }
         })
@@ -421,6 +525,7 @@ impl FluoriteCastConfig {
                 cast_fidelity_cfg: Some(FluoriteCastCfgFidelity::new_default()),
                 cast_fluid_dynamics_cfg: Some(FluoriteCastCfgFluidDynamics::new_default()),
                 cast_hit_detection_cfg: Some(FluoriteCastCfgHitDetection::new_default()),
+                cast_on_hit_cfg: Some(FluoriteCastCfgOnHit::new_default()),
                 custom_data: VarDictionary::new(),
             }
         })

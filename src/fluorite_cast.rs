@@ -1,11 +1,9 @@
 use godot::{
     classes::{
         CollisionShape3D, IStaticBody3D, PhysicsRayQueryParameters3D, PhysicsShapeQueryParameters3D, ProjectSettings, StaticBody3D,
-    }, global::{ceilf, push_warning}, prelude::*,
+    }, global::{ceilf, push_warning}, meta::conv::ObjectToOwned, prelude::*,
 };
 use core::cmp::max;
-
-use crate::fluorite_cast_config::CollisionDetectionMode;
 
 use super::fluorite_fluid_config::FluoriteFluidConfig;
 
@@ -16,6 +14,8 @@ use super::fluorite_cast_config::{
     GravityBehavior,
     FluidDynamicsBehavior,
     FluidDynamicsFidelity,
+    CollisionDetectionMode,
+    MaybeExecuteCodeVia,
 };
 
 enum SpaceCastResult {
@@ -93,6 +93,12 @@ pub struct FluoriteCast {
 
 #[godot_api]
 impl FluoriteCast {
+    #[signal]
+    fn penetrated(this: Gd<FluoriteCast>, cast_result: Gd<FluoriteSpaceCastResult>);
+
+    #[signal]
+    fn terminated(this: Gd<FluoriteCast>, cast_result: Gd<FluoriteSpaceCastResult>);
+
     #[func]
     pub fn new_cast(&mut parent_to: Gd<Node3D>, payload: Option<Gd<Node3D>>, config: Gd<FluoriteCastConfig>, global_fluid: Gd<FluoriteFluidConfig>, custom_data: VarDictionary) -> Gd<Self> {
         let mut new_node = Gd::from_init_fn(|base| {
@@ -292,10 +298,38 @@ impl FluoriteCast {
         let starting_pos = base.get_position();
         drop(base);
         let dist = vel*(delta as f32);
-        let res = self.try_intersect(starting_pos, starting_pos + dist);
-        if res.is_some() {
+
+        let res = self.try_intersect(starting_pos, starting_pos + dist); // TODO: Finish integrating this
+        if let Some(cast_result) = res {
             godot_print!("Got an intersection");
+            let has_penetrated = self.try_penetrate(cast_result.clone());
+            // enable these again if we find the need to do so
+            //let self_config_binding = self.config.bind();
+            //let cast_on_hit_cfg_bind = self_config_binding.cast_on_hit_cfg.as_ref().expect("Should always exist").bind();
+
+            let self_clo = self.object_to_owned().clone();
+            if !has_penetrated {
+                let mut base_mut = self.base_mut();
+                base_mut.set_global_position(cast_result.bind().position);
+                drop(base_mut);
+                self.signals().terminated().emit_tuple((self_clo, cast_result)); // tail of block, so no need to clone cast_result
+                // TODO: do some stuff I guess:
+                // set position to hit position
+                // downstream code should not execute, and future evaluate calls should be silently dropped
+                // queue_free if programmed to do so, otherwise the caller needs to free it explicitly
+            } else {
+                let mut base_mut = self.base_mut();
+                base_mut.set_global_position(cast_result.bind().position);
+                drop(base_mut);
+                self.signals().penetrated().emit_tuple((self_clo, cast_result));
+                // TODO: do some other stuff I guess:
+                // set position to hit position
+                // downstream code should not execute (so we don't tunnel through another collider behind the one we just hit)
+                // maybe they should keep executing anyway but by accomodating for that collision so we don't make the projectile pay every frame per collider penetrated
+                // future evaluations keep working of course
+            }
         }
+
         let mut base_mut = self.base_mut();
         base_mut.set_global_position(starting_pos + dist);
         drop(base_mut);
@@ -394,7 +428,46 @@ impl FluoriteCast {
         })
     }
     #[func]
-    pub fn try_intersect(&self, from: Vector3, to: Vector3) -> Option<Gd<FluoriteSpaceCastResult>> { // TODO: Probably should return a custom struct
+    pub fn try_penetrate(&mut self, cast_result: Gd<FluoriteSpaceCastResult>) -> bool {
+        // this sucks, so it's abstracted away to this function
+        // NOTE: it is FnMut because it needs to mutate state of self in a pragmatic implementation.
+        // Typically in the `custom_data` field to accumulate penetration data, or to modify `current_velocity`
+        // TODO: Maybe provide a builtin try_penetrate_rs closure later?
+        let self_clo = self.object_to_owned().clone(); // this is a new handle towards itself, so we can pass it into closures without making borrowck pissed
+        let mut self_config_binding = self.config.bind_mut();
+        let mut cast_on_hit_cfg_bind = self_config_binding.cast_on_hit_cfg.as_mut().expect("Should always exist").bind_mut();
+        let try_penetrate_via = cast_on_hit_cfg_bind.try_penetrate_via;
+        match try_penetrate_via {
+            MaybeExecuteCodeVia::ViaRustFnMut if let Some(associated_closure) = cast_on_hit_cfg_bind.try_penetrate_rs.as_mut() => {
+                associated_closure(self_clo, cast_result)
+            },
+            MaybeExecuteCodeVia::ViaMethodOnResourceSnakeCase
+                if let Some(method_holder) = cast_on_hit_cfg_bind.on_hit_methods_holder.as_mut()
+                && method_holder.has_method("try_penetrate") => {
+                    method_holder.call(
+                        "try_penetrate",
+                        &[
+                            self_clo.to_variant(),
+                            cast_result.to_variant(), // cast_result should probably be cloned in the call site if the caller still needs it downstream
+                        ]
+                    ).try_to().expect("try_penetrate should return bool")
+                },
+            MaybeExecuteCodeVia::ViaMethodOnResourcePascalCase
+                if let Some(method_holder) = cast_on_hit_cfg_bind.on_hit_methods_holder.as_mut()
+                && method_holder.has_method("TryPenetrate") => {
+                    method_holder.call(
+                        "TryPenetrate",
+                        &[
+                            self_clo.to_variant(),
+                            cast_result.to_variant(),
+                        ]
+                    ).try_to().expect("TryPenetrate should return bool")
+                },
+            _ => { false },
+        }
+    }
+    #[func]
+    pub fn try_intersect(&self, from: Vector3, to: Vector3) -> Option<Gd<FluoriteSpaceCastResult>> {
         let binding = self.config.bind();
         let hit_detection_cfg = binding.cast_hit_detection_cfg.as_ref().expect("Should always exist").bind();
         let space_cast_result = match hit_detection_cfg.collision_detection_mode {
@@ -404,7 +477,7 @@ impl FluoriteCast {
                 let mut query_params = PhysicsRayQueryParameters3D::new_gd();
                 query_params.set_from(from);
                 query_params.set_to(to);
-                // TODO: Maybe cache query_params into the struct itself upon costruction and wrap it in a `Cow` or something like that?? 
+                // TODO: Maybe cache query_params into the struct itself upon construction and wrap it in a `Cow` or something like that?? 
                 // It's kind of stupid to reconstruct this entire thing every single time
                 query_params.set_collision_mask(hit_detection_cfg.hit_collision_mask);
                 query_params.set_collide_with_areas(hit_detection_cfg.should_collide_with_areas);
@@ -451,7 +524,9 @@ impl FluoriteCast {
                     if res.contains_key("normal") {
                         let res_cid: i64 = res.get("collider_id").expect("Should exist").try_to().expect("Should be an i64");
                         let mut res_creal = None;
-                        let res2 = direct_space.intersect_shape(&query_params);
+                        let res2 = direct_space.intersect_shape_ex(&query_params)
+                            .max_results(8)
+                            .done();
                         for entry in res2.iter_shared() {
                             if entry.get("collider_id").as_ref().is_some_and(|x| x.try_to::<i64>().expect("Should be an i64") == res_cid) {
                                 res_creal.replace(entry.get("collider").expect("Should exist"));
