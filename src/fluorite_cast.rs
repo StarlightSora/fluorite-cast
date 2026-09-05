@@ -345,20 +345,11 @@ impl FluoriteCast {
                 if should_cleanup {
                     self.cleanup();
                 }
-                // TODO: do some stuff I guess:
-                // set position to hit position (done)
-                // downstream code should not execute (done), and future evaluate calls should be silently dropped (done)
-                // queue_free if programmed to do so, otherwise the caller needs to free it explicitly (done)
             } else {
                 let mut base_mut = self.base_mut();
                 base_mut.set_global_position(cast_result.bind().position);
                 drop(base_mut);
                 self.signals().penetrated().emit_tuple((self_clo, cast_result.clone()));
-                // TODO: do some other stuff I guess:
-                // set position to hit position (done)
-                //~~ downstream code should not execute (so we don't tunnel through another collider behind the one we just hit)~~ (dropped)
-                // maybe they should keep executing anyway but by accomodating for that collision so we don't make the projectile pay every frame per collider penetrated (done)
-                // future evaluations keep working of course (done)
                 if !override_dist {
                     self.alive_for += delta;
                     self.distance_covered += dist.length();
@@ -526,6 +517,7 @@ impl FluoriteCast {
                 query_params.set_to(to);
                 // TODO: Maybe cache query_params into the struct itself upon construction and wrap it in a `Cow` or something like that?? 
                 // It's kind of stupid to reconstruct this entire thing every single time
+                // TODO 2: Yeah it should be cached, especially because of the exclude field, which should be able to be written to in runtime
                 query_params.set_collision_mask(hit_detection_cfg.hit_collision_mask);
                 query_params.set_collide_with_areas(hit_detection_cfg.should_collide_with_areas);
                 query_params.set_collide_with_bodies(hit_detection_cfg.should_collide_with_bodies);
