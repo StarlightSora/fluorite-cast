@@ -1,5 +1,14 @@
 pub mod builtins;
 
+// If you're unfamiliar with godot-rust:
+//
+// Yes, this whole thing is a bit of a mess, and definitely far from idiomatic Rust.
+// However this is *necessary* Rust because of how dynamic Godot is.
+// In particular: every property exposed to Godot that holds an Object needs to be nullable.
+// Every Variant needs to be downcasted to some concrete type.
+// Though, we know that we can cast away all these safely as long as all the invariants are enforced by us and the caller.
+// Should an invariant be broken, a runtime panic will occur, and be printed out to Godot's output log.
+
 use godot::{
     classes::{
         CollisionShape3D, IStaticBody3D, PhysicsRayQueryParameters3D, PhysicsShapeQueryParameters3D, ProjectSettings, StaticBody3D,
@@ -294,7 +303,7 @@ impl FluoriteCast {
         parent_to.add_child(&new_node);
 
         if new_node.bind().config.bind().cast_methods_cfg.as_ref().expect("cast_methods_cfg should always exist").bind().builtin_flags.is_some() {
-            Self::parse_builtin_config(new_node.clone());
+            Self::parse_builtin_config(&mut new_node.bind_mut());
         }
 
         let new_node_clo = new_node.clone();
@@ -303,10 +312,16 @@ impl FluoriteCast {
         let mut cast_methods_cfg_bind = config_bind.cast_methods_cfg.as_mut().expect("cast_methods_cfg should always exist").bind_mut();
         let on_new_cast_via = cast_methods_cfg_bind.on_new_cast_via;
         match on_new_cast_via {
-            MaybeExecuteCodeVia::ViaRustFnMut 
-                if let Some(associated_closure) = cast_methods_cfg_bind.on_new_cast_rs.as_mut() => {
-                    associated_closure(new_node_clo);
-                },
+            MaybeExecuteCodeVia::ViaRustFnMut => {
+                let maybe_closure = cast_methods_cfg_bind.on_new_cast_rs.take();
+                drop(cast_methods_cfg_bind);
+                drop(config_bind);
+                drop(new_node_bind);
+                if let Some(mut associated_closure) = maybe_closure {
+                    associated_closure(&mut new_node.bind_mut());
+                };
+                new_node
+            },
             MaybeExecuteCodeVia::ViaMethodOnResourceSnakeCase
                 if let Some(method_holder) = cast_methods_cfg_bind.methods_holder.as_mut()
                 && method_holder.has_method("on_new_cast") => {
@@ -316,6 +331,10 @@ impl FluoriteCast {
                             new_node_clo.to_variant(),
                         ]
                     );
+                    drop(cast_methods_cfg_bind);
+                    drop(config_bind);
+                    drop(new_node_bind);
+                    new_node
                 },
             MaybeExecuteCodeVia::ViaMethodOnResourcePascalCase
                 if let Some(method_holder) = cast_methods_cfg_bind.methods_holder.as_mut()
@@ -326,14 +345,18 @@ impl FluoriteCast {
                             new_node_clo.to_variant(),
                         ]
                     );
+                    drop(cast_methods_cfg_bind);
+                    drop(config_bind);
+                    drop(new_node_bind);
+                    new_node
                 },
-            _ => {}, // No-op
+            _ => {
+                drop(cast_methods_cfg_bind);
+                drop(config_bind);
+                drop(new_node_bind);
+                new_node
+            },
         }
-        drop(cast_methods_cfg_bind);
-        drop(config_bind);
-        drop(new_node_bind);
-
-        new_node
     }
     
     pub fn add_ignore_rid(from_node: Gd<Node>, ignore_list: &mut Array<Rid>, is_recursive: bool) -> () {
@@ -518,10 +541,21 @@ impl FluoriteCast {
             let mut cast_methods_cfg_bind = config_binding.cast_methods_cfg.as_mut().expect("cast_methods_cfg should always exist").bind_mut();
             let cast_raw_evaluated_via = cast_methods_cfg_bind.cast_raw_evaluated_via;
             match cast_raw_evaluated_via {
-                MaybeExecuteCodeVia::ViaRustFnMut 
-                    if let Some(associated_closure) = cast_methods_cfg_bind.cast_raw_evaluated_rs.as_mut() => {
-                        associated_closure(gd_this, dist, delta, override_dist);
-                    },
+                MaybeExecuteCodeVia::ViaRustFnMut => {
+                    let maybe_closure = cast_methods_cfg_bind.cast_raw_evaluated_rs.take();
+                    if let Some(mut associated_closure) = maybe_closure {
+                        drop(cast_methods_cfg_bind);
+                        drop(config_binding);
+                        associated_closure(this, dist, delta, override_dist);
+                        let _ = this.config.bind_mut()
+                            .cast_methods_cfg
+                            .as_mut()
+                            .expect("cast_methods_cfg should always exist")
+                            .bind_mut()
+                            .cast_raw_evaluated_rs
+                            .insert(associated_closure);
+                    }
+                },
                 MaybeExecuteCodeVia::ViaMethodOnResourceSnakeCase
                     if let Some(method_holder) = cast_methods_cfg_bind.methods_holder.as_mut()
                     && method_holder.has_method("cast_raw_evaluated") => {
@@ -710,26 +744,32 @@ impl FluoriteCast {
         let mut self_config_binding = self.config.bind_mut();
         let mut cast_methods_cfg_bind = self_config_binding.cast_methods_cfg.as_mut().expect("cast_methods_cfg should always exist").bind_mut();
         let try_penetrate_via = cast_methods_cfg_bind.try_penetrate_via;
-        let maybe_closure = cast_methods_cfg_bind.try_penetrate_rs.take();
         match try_penetrate_via {
-            MaybeExecuteCodeVia::ViaRustFnMut if let Some(mut associated_closure) = maybe_closure => {
-                drop(cast_methods_cfg_bind);
-                drop(self_config_binding);
+            MaybeExecuteCodeVia::ViaRustFnMut => {
+                let maybe_closure = cast_methods_cfg_bind.try_penetrate_rs.take();
+                if let Some(mut associated_closure) = maybe_closure {
+                    // we have to drop all the borrow guards, or else we will double borrow in the associated closure!
+                    drop(cast_methods_cfg_bind);
+                    drop(self_config_binding);
 
-                let temp = associated_closure(self, cast_result);
+                    let temp = associated_closure(self, cast_result);
 
-                let _ = self.config
-                    .bind_mut()
-                    .cast_methods_cfg
-                    .as_mut()
-                    .expect("cast_methods_cfg should always exist")
-                    .bind_mut()
-                    .try_penetrate_rs.insert(associated_closure);
-                temp
+                    let _ = self.config
+                        .bind_mut()
+                        .cast_methods_cfg
+                        .as_mut()
+                        .expect("cast_methods_cfg should always exist")
+                        .bind_mut()
+                        .try_penetrate_rs.insert(associated_closure);
+                    temp
+                } else {
+                    false
+                }
             },
             MaybeExecuteCodeVia::ViaMethodOnResourceSnakeCase
                 if let Some(method_holder) = cast_methods_cfg_bind.methods_holder.as_mut()
                 && method_holder.has_method("try_penetrate") => {
+                    // for some reason, calling Godot methods while a guard is active doesn't crash?
                     method_holder.call(
                         "try_penetrate",
                         &[

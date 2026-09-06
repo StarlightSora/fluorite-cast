@@ -474,7 +474,7 @@ pub struct FluoriteCastCfgMethods {
 
     #[export]
     pub cast_raw_evaluated_via: MaybeExecuteCodeVia,
-    pub cast_raw_evaluated_rs: Option<Box<dyn FnMut(Gd<FluoriteCast>, Vector3, f64, bool) -> ()>>,
+    pub cast_raw_evaluated_rs: Option<Box<dyn FnMut(&mut FluoriteCast, Vector3, f64, bool) -> ()>>,
 
     #[export]
     pub on_new_cast_via: MaybeExecuteCodeVia,
@@ -482,7 +482,7 @@ pub struct FluoriteCastCfgMethods {
     /// If it's Some, then `self.custom_data_rs` will be populated as Some.
     /// 
     /// If you want to make use of the `custom_data_rs` property, make sure to initialize it in this FnMut if it's not already.
-    pub on_new_cast_rs: Option<Box<dyn FnMut(Gd<FluoriteCast>) -> ()>>,
+    pub on_new_cast_rs: Option<Box<dyn FnMut(&mut FluoriteCast) -> ()>>,
 
     #[export]
     #[init(val = true)]
@@ -539,9 +539,9 @@ impl FluoriteCastCfgMethods {
         try_penetrate_via: MaybeExecuteCodeVia,
         try_penetrate_rs: Option<Box<dyn FnMut(&mut FluoriteCast, Gd<FluoriteSpaceCastResult>) -> bool>>,
         cast_raw_evaluated_via: MaybeExecuteCodeVia,
-        cast_raw_evaluated_rs: Option<Box<dyn FnMut(Gd<FluoriteCast>, Vector3, f64, bool) -> ()>>,
+        cast_raw_evaluated_rs: Option<Box<dyn FnMut(&mut FluoriteCast, Vector3, f64, bool) -> ()>>,
         on_new_cast_via: MaybeExecuteCodeVia,
-        on_new_cast_rs: Option<Box<dyn FnMut(Gd<FluoriteCast>) -> ()>>,
+        on_new_cast_rs: Option<Box<dyn FnMut(&mut FluoriteCast) -> ()>>,
     ) -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {

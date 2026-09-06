@@ -41,11 +41,10 @@ pub struct FluoriteBuiltinConfig {
 }   
 
 impl FluoriteCast {
-    pub fn parse_builtin_config(mut this: Gd<Self>) {
+    pub fn parse_builtin_config(this: &mut Self) {
         let mut new_hmap = HashMap::new();
         {
-            let this_binding = this.bind();
-            let custom_config = &this_binding.config.bind().custom_config;
+            let custom_config = &this.config.bind().custom_config;
             if let Some(builtin_cfg_gd_as_resource) = custom_config.get("__builtin").flatten().as_ref() {
                 match builtin_cfg_gd_as_resource.to_godot_owned().try_cast::<FluoriteBuiltinConfig>() {
                     Ok(_builtin_cfg_gd) => {
@@ -63,7 +62,7 @@ impl FluoriteCast {
                 It must be assigned with the value as a FluoriteBuiltinConfig instance!")
             }
         }
-        this.bind_mut().custom_data_rs.replace(new_hmap);
+        this.custom_data_rs.replace(new_hmap);
     }
     pub fn _builtin_try_penetrate(&mut self, cast_result: Gd<FluoriteSpaceCastResult>) -> bool {
         if let Some(collider_gd) = &cast_result.bind().collider {
