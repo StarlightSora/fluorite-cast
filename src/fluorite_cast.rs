@@ -10,6 +10,7 @@ use godot::{
     prelude::*,
 };
 use core::cmp::max;
+use core::any::Any;
 
 use super::fluorite_fluid_config::FluoriteFluidConfig;
 use super::fluorite_cast_config::{
@@ -102,9 +103,11 @@ pub struct FluoriteCast {
     #[var]
     pub custom_data: VarDictionary,
     #[var]
-    pub query_params_cache_ray: Option<Gd<PhysicsRayQueryParameters3D>>,
+    query_params_cache_ray: Option<Gd<PhysicsRayQueryParameters3D>>,
     #[var]
-    pub query_params_cache_shape: Option<Gd<PhysicsShapeQueryParameters3D>>,
+    query_params_cache_shape: Option<Gd<PhysicsShapeQueryParameters3D>>,
+
+    pub custom_data_rs: Option<Box<dyn Any>>, // meant to be downcasted to whatever you want if you use Rust to use this lib
 }
 
 #[godot_api]
@@ -139,6 +142,7 @@ impl FluoriteCast {
                 is_cleaning_up: false,
                 query_params_cache_ray: None,
                 query_params_cache_shape: None,
+                custom_data_rs: None,
             }
         });
         // The base needs to be `StaticBody3D`, and a `CollisionShape3D` is needed so we can use `get_gravity` for `UseCurrentGravityRealTime` mode
