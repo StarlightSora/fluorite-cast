@@ -150,8 +150,8 @@ impl FluoriteCast {
                 new_node_bind.gravity_cache.replace(Vector3::ZERO);
             },
             GravityBehavior::UseGlobalGravityCached => {
-                let res = ProjectSettings::singleton().get_setting("physics/3d/default_gravity_vector").to::<Vector3>()
-                    * (ProjectSettings::singleton().get_setting("physics/3d/default_gravity").to::<f64>() as f32);
+                let res = ProjectSettings::singleton().get_setting("physics/3d/default_gravity_vector").try_to::<Vector3>().expect("default_gravity_vector should be Vector3")
+                    * (ProjectSettings::singleton().get_setting("physics/3d/default_gravity").try_to::<f64>().expect("default_gravity should be f64") as f32);
                 new_node_bind.gravity_cache.replace(res);
             },
             GravityBehavior::UseGlobalGravityRealTime => {}, // No-op
@@ -559,7 +559,7 @@ impl FluoriteCast {
                 query_params.set_to(to);
                 let res = direct_space.intersect_ray(&*query_params);
                 if res.contains_key("normal") {
-                    let res_pos = res.get("position").expect("position should always exist").to::<Vector3>();
+                    let res_pos = res.get("position").expect("position should always exist").try_to::<Vector3>().expect("position should be Vector3");
                     SpaceCastResult::HitByRaycast(res, res_pos - from)
                 } else {
                     SpaceCastResult::HitNothing
