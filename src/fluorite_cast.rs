@@ -193,7 +193,7 @@ impl FluoriteCast {
             hit_detection_cfg.exclude_list_paths_shallow
                 .iter_shared()
                 .for_each(|pth| {
-                    let maybe_node = new_node_bind.base().get_node_or_null(&pth);
+                    let maybe_node = parent_to.get_node_or_null(&pth);
                     if let Some(mut some_node) = maybe_node {
                         if some_node.has_method("get_rid") {
                             arr.push(some_node.call("get_rid", &[]).try_to::<Rid>().expect("get_rid should return Rid"));
@@ -211,7 +211,7 @@ impl FluoriteCast {
             hit_detection_cfg.exclude_list_paths_recursive
                 .iter_shared()
                 .for_each(|pth| {
-                    let maybe_node = new_node_bind.base().get_node_or_null(&pth);
+                    let maybe_node = parent_to.get_node_or_null(&pth);
                     if let Some(some_node) = maybe_node {
                         // Recursive FnMut closures are nearly impossible to do safely, so we declare a local function instead
                         fn recursive_search(mut from: Gd<Node>, mut arr: &mut Array<Rid>, depth: u8) -> () {
