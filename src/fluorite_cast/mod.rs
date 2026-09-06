@@ -1,3 +1,5 @@
+pub mod builtins;
+
 use godot::{
     classes::{
         CollisionShape3D, IStaticBody3D, PhysicsRayQueryParameters3D, PhysicsShapeQueryParameters3D, ProjectSettings, StaticBody3D,
@@ -9,6 +11,7 @@ use godot::{
     meta::conv::ObjectToOwned,
     prelude::*,
 };
+use hashbrown::HashMap;
 use core::cmp::max;
 use core::any::Any;
 
@@ -107,7 +110,17 @@ pub struct FluoriteCast {
     #[var]
     query_params_cache_shape: Option<Gd<PhysicsShapeQueryParameters3D>>,
 
-    pub custom_data_rs: Option<Box<dyn Any>>, // meant to be downcasted to whatever you want if you use Rust to use this lib
+    /// Meant as an alternative to `custom_data` if you use Rust to use this library, as it is generally faster and more type safe.
+    /// 
+    /// Since we cannot use generic types on structs registered to Godot, we upcast to Any in the struct definition
+    /// and downcast whenever it has to be read and written.
+    /// 
+    /// The builtin data type, if enabled, will be registered as the key `String::new("__builtin")` and the value resolves to the type `FluoriteBuiltinState`.
+    /// This type contains all the information that builtin callbacks act on.
+    /// 
+    /// This property is lazily populated; in particular, if self.config.cast_methods_cfg.builtin_flags is None, then this will be None.
+    /// If it's Some, then this will be populated as Some, with the above mentioned key occupied.
+    pub custom_data_rs: Option<HashMap<String, Box<dyn Any>>>,
 }
 
 #[godot_api]
@@ -280,8 +293,67 @@ impl FluoriteCast {
 
         parent_to.add_child(&new_node);
 
+        if new_node.bind().config.bind().cast_methods_cfg.as_ref().expect("cast_methods_cfg should always exist").bind().builtin_flags.is_some() {
+            Self::parse_builtin_config(new_node.clone());
+        }
+
+        let new_node_clo = new_node.clone();
+        let mut new_node_bind = new_node.bind_mut();
+        let mut config_bind = new_node_bind.config.bind_mut();
+        let mut cast_methods_cfg_bind = config_bind.cast_methods_cfg.as_mut().expect("cast_methods_cfg should always exist").bind_mut();
+        let on_new_cast_via = cast_methods_cfg_bind.on_new_cast_via;
+        match on_new_cast_via {
+            MaybeExecuteCodeVia::ViaRustFnMut 
+                if let Some(associated_closure) = cast_methods_cfg_bind.on_new_cast_rs.as_mut() => {
+                    associated_closure(new_node_clo);
+                },
+            MaybeExecuteCodeVia::ViaMethodOnResourceSnakeCase
+                if let Some(method_holder) = cast_methods_cfg_bind.methods_holder.as_mut()
+                && method_holder.has_method("on_new_cast") => {
+                    method_holder.call(
+                        "on_new_cast",
+                        &[
+                            new_node_clo.to_variant(),
+                        ]
+                    );
+                },
+            MaybeExecuteCodeVia::ViaMethodOnResourcePascalCase
+                if let Some(method_holder) = cast_methods_cfg_bind.methods_holder.as_mut()
+                && method_holder.has_method("OnNewCast") => {
+                    method_holder.call(
+                        "OnNewCast",
+                        &[
+                            new_node_clo.to_variant(),
+                        ]
+                    );
+                },
+            _ => {}, // No-op
+        }
+        drop(cast_methods_cfg_bind);
+        drop(config_bind);
+        drop(new_node_bind);
+
         new_node
     }
+    
+    pub fn add_ignore_rid(from_node: Gd<Node>, ignore_list: &mut Array<Rid>, is_recursive: bool) -> () {
+        fn recursive_search(mut from: Gd<Node>, mut arr: &mut Array<Rid>, depth: u8, should_recurse: bool) -> () {
+            if depth == u8::MAX {
+                // who knows what abomination of a scene tree you have if you hit this limit
+                godot_warn!("Recursion depth of 255 reached in recursive_search while parsing exclude_list_paths_recursive! Will not recurse deeper!");
+                return
+            }
+            if from.has_method("get_rid") {
+                arr.push(from.call("get_rid", &[]).try_to::<Rid>().expect("get_rid should return Rid"));
+            }
+            if !should_recurse { return }
+            from.get_children()
+                .iter_shared()
+                .for_each(|child| recursive_search(child, &mut arr, depth + 1, should_recurse));
+        }
+        recursive_search(from_node, ignore_list, 0, is_recursive);
+    }
+
     #[func]
     pub fn assign_payload(&mut self, payload: Option<Gd<Node3D>>) -> () {
         if let Some(mut node) = self.payload_node.take() {
@@ -441,22 +513,22 @@ impl FluoriteCast {
         };
 
         let exec_callback = |this: &mut Self| {
-            let self_gd = this.to_gd();
+            let gd_this = this.object_to_owned();
             let mut config_binding = this.config.bind_mut();
-            let mut cast_on_hit_cfg_bind = config_binding.cast_on_hit_cfg.as_mut().expect("cast_on_hit_cfg should always exist").bind_mut();
-            let cast_raw_evaluated_via = cast_on_hit_cfg_bind.cast_raw_evaluated_via;
+            let mut cast_methods_cfg_bind = config_binding.cast_methods_cfg.as_mut().expect("cast_methods_cfg should always exist").bind_mut();
+            let cast_raw_evaluated_via = cast_methods_cfg_bind.cast_raw_evaluated_via;
             match cast_raw_evaluated_via {
                 MaybeExecuteCodeVia::ViaRustFnMut 
-                    if let Some(associated_closure) = cast_on_hit_cfg_bind.cast_raw_evaluated_rs.as_mut() => {
-                        associated_closure(self_gd, dist, delta, override_dist);
+                    if let Some(associated_closure) = cast_methods_cfg_bind.cast_raw_evaluated_rs.as_mut() => {
+                        associated_closure(gd_this, dist, delta, override_dist);
                     },
                 MaybeExecuteCodeVia::ViaMethodOnResourceSnakeCase
-                    if let Some(method_holder) = cast_on_hit_cfg_bind.on_hit_methods_holder.as_mut()
+                    if let Some(method_holder) = cast_methods_cfg_bind.methods_holder.as_mut()
                     && method_holder.has_method("cast_raw_evaluated") => {
                         method_holder.call(
                             "cast_raw_evaluated",
                             &[
-                                self_gd.to_variant(),
+                                gd_this.to_variant(),
                                 dist.to_variant(),
                                 delta.to_variant(),
                                 override_dist.to_variant(),
@@ -464,12 +536,12 @@ impl FluoriteCast {
                         );
                     },
                 MaybeExecuteCodeVia::ViaMethodOnResourcePascalCase
-                    if let Some(method_holder) = cast_on_hit_cfg_bind.on_hit_methods_holder.as_mut()
+                    if let Some(method_holder) = cast_methods_cfg_bind.methods_holder.as_mut()
                     && method_holder.has_method("CastRawEvaluated") => {
                         method_holder.call(
                             "CastRawEvaluated",
                             &[
-                                self_gd.to_variant(),
+                                gd_this.to_variant(),
                                 dist.to_variant(),
                                 delta.to_variant(),
                                 override_dist.to_variant(),
@@ -490,9 +562,9 @@ impl FluoriteCast {
                 self.signals().terminated().emit_tuple((self_clo, cast_result));
 
                 let self_config_binding = self.config.bind();
-                let cast_on_hit_cfg_bind = self_config_binding.cast_on_hit_cfg.as_ref().expect("cast_on_hit_cfg should always exist").bind();
-                let should_cleanup = cast_on_hit_cfg_bind.auto_queue_free_on_terminate;
-                drop(cast_on_hit_cfg_bind);
+                let cast_methods_cfg_bind = self_config_binding.cast_methods_cfg.as_ref().expect("cast_methods_cfg should always exist").bind();
+                let should_cleanup = cast_methods_cfg_bind.auto_queue_free_on_terminate;
+                drop(cast_methods_cfg_bind);
                 drop(self_config_binding);
                 self.disabled = true;
                 if should_cleanup {
@@ -634,28 +706,40 @@ impl FluoriteCast {
         // this sucks, so it's abstracted away to this function
         // NOTE: it is FnMut because it needs to mutate state of self in a pragmatic implementation.
         // Typically in the `custom_data` field to accumulate penetration data, or to modify `current_velocity`
-        // TODO: Maybe provide a builtin try_penetrate_rs closure later?
-        let self_clo = self.object_to_owned().clone(); // this is a new handle towards itself, so we can pass it into closures without making borrowck pissed
+        let self_clo = self.object_to_owned().clone();
         let mut self_config_binding = self.config.bind_mut();
-        let mut cast_on_hit_cfg_bind = self_config_binding.cast_on_hit_cfg.as_mut().expect("cast_on_hit_cfg should always exist").bind_mut();
-        let try_penetrate_via = cast_on_hit_cfg_bind.try_penetrate_via;
+        let mut cast_methods_cfg_bind = self_config_binding.cast_methods_cfg.as_mut().expect("cast_methods_cfg should always exist").bind_mut();
+        let try_penetrate_via = cast_methods_cfg_bind.try_penetrate_via;
+        let maybe_closure = cast_methods_cfg_bind.try_penetrate_rs.take();
         match try_penetrate_via {
-            MaybeExecuteCodeVia::ViaRustFnMut if let Some(associated_closure) = cast_on_hit_cfg_bind.try_penetrate_rs.as_mut() => {
-                associated_closure(self_clo, cast_result)
+            MaybeExecuteCodeVia::ViaRustFnMut if let Some(mut associated_closure) = maybe_closure => {
+                drop(cast_methods_cfg_bind);
+                drop(self_config_binding);
+
+                let temp = associated_closure(self, cast_result);
+
+                let _ = self.config
+                    .bind_mut()
+                    .cast_methods_cfg
+                    .as_mut()
+                    .expect("cast_methods_cfg should always exist")
+                    .bind_mut()
+                    .try_penetrate_rs.insert(associated_closure);
+                temp
             },
             MaybeExecuteCodeVia::ViaMethodOnResourceSnakeCase
-                if let Some(method_holder) = cast_on_hit_cfg_bind.on_hit_methods_holder.as_mut()
+                if let Some(method_holder) = cast_methods_cfg_bind.methods_holder.as_mut()
                 && method_holder.has_method("try_penetrate") => {
                     method_holder.call(
                         "try_penetrate",
                         &[
                             self_clo.to_variant(),
-                            cast_result.to_variant(), // cast_result should probably be cloned in the call site if the caller still needs it downstream
+                            cast_result.to_variant(),
                         ]
                     ).try_to().expect("try_penetrate should return bool")
                 },
             MaybeExecuteCodeVia::ViaMethodOnResourcePascalCase
-                if let Some(method_holder) = cast_on_hit_cfg_bind.on_hit_methods_holder.as_mut()
+                if let Some(method_holder) = cast_methods_cfg_bind.methods_holder.as_mut()
                 && method_holder.has_method("TryPenetrate") => {
                     method_holder.call(
                         "TryPenetrate",
@@ -665,7 +749,17 @@ impl FluoriteCast {
                         ]
                     ).try_to().expect("TryPenetrate should return bool")
                 },
-            _ => { false },
+            _ => { 
+                let builtin_flags = cast_methods_cfg_bind.builtin_flags.clone();
+                drop(cast_methods_cfg_bind);
+                drop(self_config_binding);
+
+                if let Some(flags) = builtin_flags && flags.bind().builtin_penetration {
+                    Self::_builtin_try_penetrate(self, cast_result)
+                } else {
+                    false
+                }
+            },
         }
     }
     #[func]

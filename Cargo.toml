@@ -9,6 +9,7 @@ publish = false # Suppress publishing during dev build
 
 [dependencies]
 godot = { version = "0.5", features = ["upcoming-editor-placeholders"] }
+hashbrown = { version = "0.17" }
 
 ## Uncomment below two lines if building a standalone cdylib build
 #[lib]

@@ -416,43 +416,100 @@ impl FluoriteCastCfgHitDetection {
 
 #[derive(GodotClass)]
 #[class(init, base=Resource)]
-pub struct FluoriteCastCfgOnHit {
+pub struct FluoriteCastCfgBuiltinFlags {
+    base: Base<Resource>,
+    #[export]
+    #[init(val = true)]
+    /// Use the builtin penetration system.
+    pub builtin_penetration: bool,
+}
+#[godot_api]
+impl FluoriteCastCfgBuiltinFlags {
+    #[func]
+    pub fn new_config(
+        builtin_penetration: bool,
+    ) -> Gd<FluoriteCastCfgBuiltinFlags> {
+        Gd::from_init_fn(|base| {
+            Self {
+                base,
+                builtin_penetration,
+            }
+        })
+    }
+    #[func]
+    pub fn new_default() -> Gd<FluoriteCastCfgBuiltinFlags> {
+        Gd::from_init_fn(|base| {
+            Self {
+                base,
+                builtin_penetration: true,
+            }
+        })
+    }
+}
+
+#[derive(GodotClass)]
+#[class(init, base=Resource)]
+pub struct FluoriteCastCfgMethods {
     base: Base<Resource>,
     #[export]
     /// Needs to implement:
+    /// 
     /// `try_penetrate` or `TryPenetrate` => signature `(FluoriteCast, FluoriteSpaceCastResult) -> bool`
+    /// 
     /// `cast_raw_evaluated` or `CastRawEvaluated` => signature `(FluoriteCast, Vector3, float, bool) -> void`
-    pub on_hit_methods_holder: Option<Gd<Resource>>,
+    /// 
+    /// `on_new_cast` or `OnNewCast` => signature `(FluoriteCast) -> void`
+    pub methods_holder: Option<Gd<Resource>>,
+
+    #[export]
+    /// If this is None (null in Godot), then all builtin custom behavior will be disabled.
+    /// 
+    /// If this is Some, then builtin custom behavior will be selectively enabled.
+    /// Make sure to pass in `FluoriteBuiltinConfig` to `FluoriteCastConfig.custom_config` with the key as `"__builtin"`.
+    pub builtin_flags: Option<Gd<FluoriteCastCfgBuiltinFlags>>,
 
     #[export]
     pub try_penetrate_via: MaybeExecuteCodeVia,
-    pub try_penetrate_rs: Option<Box<dyn FnMut(Gd<FluoriteCast>, Gd<FluoriteSpaceCastResult>) -> bool>>,
+    pub try_penetrate_rs: Option<Box<dyn FnMut(&mut FluoriteCast, Gd<FluoriteSpaceCastResult>) -> bool>>,
 
     #[export]
     pub cast_raw_evaluated_via: MaybeExecuteCodeVia,
     pub cast_raw_evaluated_rs: Option<Box<dyn FnMut(Gd<FluoriteCast>, Vector3, f64, bool) -> ()>>,
 
     #[export]
+    pub on_new_cast_via: MaybeExecuteCodeVia,
+    /// If `self.config.cast_methods_cfg.builtin_flags` is None, then `self.custom_data_rs` will be None.
+    /// If it's Some, then `self.custom_data_rs` will be populated as Some.
+    /// 
+    /// If you want to make use of the `custom_data_rs` property, make sure to initialize it in this FnMut if it's not already.
+    pub on_new_cast_rs: Option<Box<dyn FnMut(Gd<FluoriteCast>) -> ()>>,
+
+    #[export]
     #[init(val = true)]
     pub auto_queue_free_on_terminate: bool,
 }
 #[godot_api]
-impl FluoriteCastCfgOnHit {
+impl FluoriteCastCfgMethods {
     #[func]
     pub fn new_config(
-        on_hit_methods_holder: Option<Gd<Resource>>,
+        methods_holder: Option<Gd<Resource>>,
+        auto_queue_free_on_terminate: bool,
+        builtin_flags: Option<Gd<FluoriteCastCfgBuiltinFlags>>,
         try_penetrate_via: MaybeExecuteCodeVia,
         cast_raw_evaluated_via: MaybeExecuteCodeVia,
-        auto_queue_free_on_terminate: bool,
+        on_new_cast_via: MaybeExecuteCodeVia,
     ) -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
                 base,
-                on_hit_methods_holder,
+                methods_holder,
+                builtin_flags,
                 try_penetrate_via,
                 try_penetrate_rs: None,
                 cast_raw_evaluated_via,
                 cast_raw_evaluated_rs: None,
+                on_new_cast_via,
+                on_new_cast_rs: None,
                 auto_queue_free_on_terminate,
             }
         })
@@ -462,32 +519,41 @@ impl FluoriteCastCfgOnHit {
         Gd::from_init_fn(|base| {
             Self {
                 base,
-                on_hit_methods_holder: None,
+                methods_holder: None,
+                builtin_flags: None,
                 try_penetrate_via: MaybeExecuteCodeVia::default(),
                 try_penetrate_rs: None,
                 cast_raw_evaluated_via: MaybeExecuteCodeVia::default(),
                 cast_raw_evaluated_rs: None,
+                on_new_cast_via: MaybeExecuteCodeVia::default(),
+                on_new_cast_rs: None,
                 auto_queue_free_on_terminate: true,
             }
         })
     }
 
-    pub fn new_from_rs(
-        on_hit_methods_holder: Option<Gd<Resource>>,
+    pub fn new_config_rs(
+        methods_holder: Option<Gd<Resource>>,
+        auto_queue_free_on_terminate: bool,
+        builtin_flags: Option<Gd<FluoriteCastCfgBuiltinFlags>>,
         try_penetrate_via: MaybeExecuteCodeVia,
-        try_penetrate_rs: Option<Box<dyn FnMut(Gd<FluoriteCast>, Gd<FluoriteSpaceCastResult>) -> bool>>,
+        try_penetrate_rs: Option<Box<dyn FnMut(&mut FluoriteCast, Gd<FluoriteSpaceCastResult>) -> bool>>,
         cast_raw_evaluated_via: MaybeExecuteCodeVia,
         cast_raw_evaluated_rs: Option<Box<dyn FnMut(Gd<FluoriteCast>, Vector3, f64, bool) -> ()>>,
-        auto_queue_free_on_terminate: bool,
+        on_new_cast_via: MaybeExecuteCodeVia,
+        on_new_cast_rs: Option<Box<dyn FnMut(Gd<FluoriteCast>) -> ()>>,
     ) -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
                 base,
-                on_hit_methods_holder,
+                methods_holder,
+                builtin_flags,
                 try_penetrate_via,
                 try_penetrate_rs,
                 cast_raw_evaluated_via,
                 cast_raw_evaluated_rs,
+                on_new_cast_via,
+                on_new_cast_rs,
                 auto_queue_free_on_terminate,
             }
         })
@@ -522,9 +588,10 @@ pub struct FluoriteCastConfig {
     #[export]
     pub cast_hit_detection_cfg: Option<Gd<FluoriteCastCfgHitDetection>>,
     #[export]
-    pub cast_on_hit_cfg: Option<Gd<FluoriteCastCfgOnHit>>,
+    pub cast_methods_cfg: Option<Gd<FluoriteCastCfgMethods>>,
     #[export]
-    pub custom_data: VarDictionary,
+    /// If you need to add FluoriteBuiltinConfig, add it with the key as `"__builtin"`.
+    pub custom_config: Dictionary<GString, Option<Gd<Resource>>>,
 }
 
 #[godot_api]
@@ -536,12 +603,12 @@ impl FluoriteCastConfig {
         max_alive_time: f64,
         max_total_length: f64,
         evaluate_mode: EvaluateMode,
-        &custom_data: VarDictionary, // probably don't want to move this, so get a reference and clone it like a Rc
+        &custom_config: Dictionary<GString, Option<Gd<Resource>>>, // probably don't want to move this, so get a reference and clone it like a Rc
         cast_gravity_cfg: Option<Gd<FluoriteCastCfgGravity>>,
         cast_fidelity_cfg: Option<Gd<FluoriteCastCfgFidelity>>,
         cast_fluid_dynamics_cfg: Option<Gd<FluoriteCastCfgFluidDynamics>>,
         cast_hit_detection_cfg: Option<Gd<FluoriteCastCfgHitDetection>>,
-        cast_on_hit_cfg: Option<Gd<FluoriteCastCfgOnHit>>,
+        cast_methods_cfg: Option<Gd<FluoriteCastCfgMethods>>,
     ) -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -555,8 +622,8 @@ impl FluoriteCastConfig {
                 cast_fidelity_cfg: Some(cast_fidelity_cfg.unwrap_or_else(|| FluoriteCastCfgFidelity::new_default())),
                 cast_fluid_dynamics_cfg: Some(cast_fluid_dynamics_cfg.unwrap_or_else(|| FluoriteCastCfgFluidDynamics::new_default())),
                 cast_hit_detection_cfg: Some(cast_hit_detection_cfg.unwrap_or_else(|| FluoriteCastCfgHitDetection::new_default())),
-                cast_on_hit_cfg: Some(cast_on_hit_cfg.unwrap_or_else(|| FluoriteCastCfgOnHit::new_default())),
-                custom_data: custom_data.clone(),
+                cast_methods_cfg: Some(cast_methods_cfg.unwrap_or_else(|| FluoriteCastCfgMethods::new_default())),
+                custom_config: custom_config.clone(),
             }
         })
     }
@@ -574,8 +641,8 @@ impl FluoriteCastConfig {
                 cast_fidelity_cfg: Some(FluoriteCastCfgFidelity::new_default()),
                 cast_fluid_dynamics_cfg: Some(FluoriteCastCfgFluidDynamics::new_default()),
                 cast_hit_detection_cfg: Some(FluoriteCastCfgHitDetection::new_default()),
-                cast_on_hit_cfg: Some(FluoriteCastCfgOnHit::new_default()),
-                custom_data: VarDictionary::new(),
+                cast_methods_cfg: Some(FluoriteCastCfgMethods::new_default()),
+                custom_config: Dictionary::new(),
             }
         })
     }
