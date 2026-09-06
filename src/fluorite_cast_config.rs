@@ -475,8 +475,10 @@ pub struct FluoriteCastConfig {
     #[init(val = u32::MAX)]
     pub area_collision_mask: u32,
     #[export]
+    #[init(val = 15.0)]
     pub max_alive_time: f64,
     #[export]
+    #[init(val = 2000.0)]
     pub max_total_length: f64,
     #[export]
     pub evaluate_mode: EvaluateMode,
