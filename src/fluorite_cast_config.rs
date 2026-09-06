@@ -421,7 +421,7 @@ pub struct FluoriteCastCfgOnHit {
     #[export]
     /// Needs to implement:
     /// `try_penetrate` or `TryPenetrate` => signature `(FluoriteCast, FluoriteSpaceCastResult) -> bool`
-    /// `cast_raw_evaluated` or `CastRawEvaluated` => signature `(FluoriteCast, Vector3, float, bool) -> bool`
+    /// `cast_raw_evaluated` or `CastRawEvaluated` => signature `(FluoriteCast, Vector3, float, bool) -> void`
     pub on_hit_methods_holder: Option<Gd<Resource>>,
 
     #[export]

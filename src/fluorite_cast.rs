@@ -81,7 +81,6 @@ impl FluoriteSpaceCastResult {
 #[class(init, base=StaticBody3D)]
 pub struct FluoriteCast {
     base: Base<StaticBody3D>,
-    payload_node: Option<Gd<Node3D>>,
     gravity_cache: Option<Vector3>,
     ambient_airspeed_cache: Option<Vector3>,
     speed_of_sound_cache: Option<f64>,
@@ -89,22 +88,23 @@ pub struct FluoriteCast {
     disabled: bool,
     is_cleaning_up: bool,
     config: Gd<FluoriteCastConfig>,
+    payload_node: Option<Gd<Node3D>>,
     #[var]
-    current_velocity: Vector3,
+    pub current_velocity: Vector3,
     #[var]
-    current_acceleration: Vector3,
+    pub current_acceleration: Vector3,
     #[var]
-    distance_covered: f32,
+    pub distance_covered: f32,
     #[var]
-    alive_for: f64,
+    pub alive_for: f64,
     #[var]
-    global_fluid: Option<Gd<FluoriteFluidConfig>>,
+    pub global_fluid: Option<Gd<FluoriteFluidConfig>>,
     #[var]
-    custom_data: VarDictionary,
+    pub custom_data: VarDictionary,
     #[var]
-    query_params_cache_ray: Option<Gd<PhysicsRayQueryParameters3D>>,
+    pub query_params_cache_ray: Option<Gd<PhysicsRayQueryParameters3D>>,
     #[var]
-    query_params_cache_shape: Option<Gd<PhysicsShapeQueryParameters3D>>,
+    pub query_params_cache_shape: Option<Gd<PhysicsShapeQueryParameters3D>>,
 }
 
 #[godot_api]
@@ -287,6 +287,18 @@ impl FluoriteCast {
         if let Some(payload_rc) = self.payload_node.clone() {
             self.base_mut().add_child(&payload_rc);
         }
+    }
+    #[func]
+    pub fn get_payload(&self) -> Option<Gd<Node3D>> {
+        self.payload_node.clone()
+    }
+    #[func]
+    pub fn is_disabled(&self) -> bool {
+        self.disabled
+    }
+    #[func]
+    pub fn is_scheduled_free(&self) -> bool {
+        self.is_cleaning_up
     }
     #[func]
     pub fn fire(&mut self, global_origin: Transform3D, direction: Vector3) -> () {
@@ -534,6 +546,13 @@ impl FluoriteCast {
     #[func]
     pub fn get_config(&self) -> Gd<FluoriteCastConfig> {
         self.config.clone()
+    }
+    #[func]
+    /// signature of `with` in Godot should be: `(FluoriteCast) -> void`
+    pub fn mut_config(&self, with: Callable) -> () {
+        with.call(&[
+            self.config.to_variant()
+        ]);
     }
     #[func]
     pub fn compute_drag_full_approx(&self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
