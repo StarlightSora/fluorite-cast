@@ -1,12 +1,17 @@
 use godot::{
     classes::{
         CollisionShape3D, IStaticBody3D, PhysicsRayQueryParameters3D, PhysicsShapeQueryParameters3D, ProjectSettings, StaticBody3D,
-    }, global::{ceilf, push_warning}, meta::conv::ObjectToOwned, prelude::*,
+    },
+    global::{
+        ceilf,
+        push_warning
+    },
+    meta::conv::ObjectToOwned,
+    prelude::*,
 };
 use core::cmp::max;
 
 use super::fluorite_fluid_config::FluoriteFluidConfig;
-
 use super::fluorite_cast_config::{
     FluoriteCastConfig,
     EvaluateMode,
@@ -16,6 +21,7 @@ use super::fluorite_cast_config::{
     FluidDynamicsFidelity,
     CollisionDetectionMode,
     MaybeExecuteCodeVia,
+    FluoriteCastCfgHitDetection,
 };
 
 enum SpaceCastResult {
@@ -143,7 +149,10 @@ impl FluoriteCast {
         let collision_mask_data = cfg_binding.area_collision_mask;
         let gravity_behavior = cfg_binding.cast_gravity_cfg.as_ref().expect("cast_gravity_cfg should always exist").bind().gravity_behavior;
         let fluid_dynamics_behavior = cfg_binding.cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().fluid_dynamics_behavior;
-        let collision_detection_mode = cfg_binding.cast_hit_detection_cfg.as_ref().expect("cast_hit_detection_cfg should always exist").bind().collision_detection_mode;
+        let hit_detection_cfg_bind = cfg_binding.cast_hit_detection_cfg.as_ref().expect("cast_hit_detection_cfg should always exist").bind();
+        let collision_detection_mode = hit_detection_cfg_bind.collision_detection_mode;
+        let suppress_invalid_path_warnings = hit_detection_cfg_bind.suppress_invalid_path_warnings;
+        drop(hit_detection_cfg_bind);
         drop(cfg_binding);
         match gravity_behavior {
             GravityBehavior::Ignore => {
@@ -179,6 +188,54 @@ impl FluoriteCast {
             FluidDynamicsBehavior::UseGlobalFluidRealTime | FluidDynamicsBehavior::UseCurrentFluidRealTime
                 => {}, // No-op
         }
+        let make_exclude_list = |hit_detection_cfg: GdRef<'_, FluoriteCastCfgHitDetection>| -> Array<Rid> {
+            let mut arr = array![new_node_bind.base().get_rid()];
+            hit_detection_cfg.exclude_list_paths_shallow
+                .iter_shared()
+                .for_each(|pth| {
+                    let maybe_node = new_node_bind.base().get_node_or_null(&pth);
+                    if let Some(mut some_node) = maybe_node {
+                        if some_node.has_method("get_rid") {
+                            arr.push(some_node.call("get_rid", &[]).try_to::<Rid>().expect("get_rid should return Rid"));
+                        } else {
+                            if !suppress_invalid_path_warnings {
+                                push_warning(&[pth.to_string().to_variant(), " does not implement `get_rid`, so it will be ignored".to_variant()]);
+                            }
+                        }
+                    } else {
+                        if !suppress_invalid_path_warnings {
+                            push_warning(&[pth.to_string().to_variant(), " pointed to null, so it will be ignored".to_variant()]);
+                        }
+                    }
+                });
+            hit_detection_cfg.exclude_list_paths_recursive
+                .iter_shared()
+                .for_each(|pth| {
+                    let maybe_node = new_node_bind.base().get_node_or_null(&pth);
+                    if let Some(some_node) = maybe_node {
+                        // Recursive FnMut closures are nearly impossible to do safely, so we declare a local function instead
+                        fn recursive_search(mut from: Gd<Node>, mut arr: &mut Array<Rid>, depth: u8) -> () {
+                            if depth == u8::MAX {
+                                // who knows what abomination of a scene tree you have if you hit this limit
+                                godot_warn!("Recursion depth of 255 reached in recursive_search while parsing exclude_list_paths_recursive! Will not recurse deeper!");
+                                return
+                            }
+                            if from.has_method("get_rid") {
+                                arr.push(from.call("get_rid", &[]).try_to::<Rid>().expect("get_rid should return Rid"));
+                            }
+                            from.get_children()
+                                .iter_shared()
+                                .for_each(|child| recursive_search(child, &mut arr, depth + 1));
+                        }
+                        recursive_search(some_node, &mut arr, 0);
+                    } else {
+                        if !suppress_invalid_path_warnings {
+                            push_warning(&[pth.to_string().to_variant(), " pointed to null, so it will be ignored".to_variant()]);
+                        }
+                    }
+                });
+            arr
+        };
         match collision_detection_mode {
             CollisionDetectionMode::Ignore => {}, // No-op
             CollisionDetectionMode::ByRaycast => {
@@ -190,8 +247,8 @@ impl FluoriteCast {
                 query_params.set_collide_with_bodies(hit_detection_cfg.should_collide_with_bodies);
                 query_params.set_hit_back_faces(hit_detection_cfg.should_hit_back_faces);
                 query_params.set_hit_from_inside(hit_detection_cfg.should_hit_from_inside);
-                query_params.set_exclude(&array![new_node_bind.base().get_rid()]); // TODO: integrate exclude_list_paths
-                drop(hit_detection_cfg); drop(binding);
+                query_params.set_exclude(&make_exclude_list(hit_detection_cfg));
+                drop(binding);
                 let _ = new_node_bind.query_params_cache_ray.insert(query_params);
             },
             CollisionDetectionMode::ByShapecast => {
@@ -203,8 +260,8 @@ impl FluoriteCast {
                 query_params.set_collide_with_bodies(hit_detection_cfg.should_collide_with_bodies);
                 query_params.set_shape(hit_detection_cfg.hit_shape.as_ref().expect("hit_shape should always exist"));
                 query_params.set_margin(hit_detection_cfg.shape_margin as f32);
-                query_params.set_exclude(&array![new_node_bind.base().get_rid()]);
-                drop(hit_detection_cfg); drop(binding);
+                query_params.set_exclude(&make_exclude_list(hit_detection_cfg));
+                drop(binding);
                 let _ = new_node_bind.query_params_cache_shape.insert(query_params);
             },
         }
@@ -605,7 +662,7 @@ impl FluoriteCast {
                             // probably can be written in a more idiomatic way, but I forgot how
                             let _ = res.insert("collider", &res_creal.expect("Infallible, checked above"));
                         } else {
-                            push_warning(&["Could not infer collider, so `collider` will be null".to_variant()]);
+                            godot_warn!("Could not infer collider, so `collider` will be null");
                         }
                         SpaceCastResult::HitByShapecast(res, unsafe_march)
                     } else {

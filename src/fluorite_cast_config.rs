@@ -270,7 +270,12 @@ pub struct FluoriteCastCfgHitDetection {
     #[init(val = u32::MAX)]
     pub hit_collision_mask: u32,
     #[export]
-    pub exclude_list_paths: Array<NodePath>, // TODO: Not in use yet
+    pub exclude_list_paths_shallow: Array<NodePath>,
+    #[export]
+    pub exclude_list_paths_recursive: Array<NodePath>,
+    #[export]
+    #[init(val = false)]
+    pub suppress_invalid_path_warnings: bool,
     #[export]
     #[init(val = None)]
     pub hit_shape: Option<Gd<Shape3D>>,
@@ -298,7 +303,9 @@ impl FluoriteCastCfgHitDetection {
     pub fn new_config(
         collision_detection_mode: CollisionDetectionMode,
         hit_collision_mask: u32,
-        exclude_list_paths: Array<NodePath>,
+        exclude_list_paths_shallow: Array<NodePath>,
+        exclude_list_paths_recursive: Array<NodePath>,
+        suppress_invalid_path_warnings: bool,
         hit_shape: Option<Gd<Shape3D>>,
         shape_margin: f64,
         shape_basis: Basis,
@@ -312,7 +319,9 @@ impl FluoriteCastCfgHitDetection {
                 base,
                 collision_detection_mode,
                 hit_collision_mask,
-                exclude_list_paths,
+                exclude_list_paths_shallow,
+                exclude_list_paths_recursive,
+                suppress_invalid_path_warnings,
                 hit_shape,
                 shape_margin,
                 shape_basis,
@@ -330,7 +339,9 @@ impl FluoriteCastCfgHitDetection {
                 base,
                 collision_detection_mode: CollisionDetectionMode::Ignore,
                 hit_collision_mask: u32::MAX,
-                exclude_list_paths: array![],
+                exclude_list_paths_shallow: array![],
+                exclude_list_paths_recursive: array![],
+                suppress_invalid_path_warnings: false,
                 hit_shape: None,
                 shape_margin: 0.0,
                 shape_basis: Basis::IDENTITY,
@@ -342,13 +353,15 @@ impl FluoriteCastCfgHitDetection {
         })
     }
     #[func]
-    pub fn new_by_ray(hit_collision_mask: u32, exclude_list_paths: Array<NodePath>) -> Gd<Self> {
+    pub fn new_by_ray(hit_collision_mask: u32, exclude_list_paths_shallow: Array<NodePath>, exclude_list_paths_recursive: Array<NodePath>) -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
                 base,
                 collision_detection_mode: CollisionDetectionMode::ByRaycast,
                 hit_collision_mask,
-                exclude_list_paths,
+                exclude_list_paths_shallow,
+                exclude_list_paths_recursive,
+                suppress_invalid_path_warnings: false,
                 hit_shape: None,
                 shape_margin: 0.0,
                 shape_basis: Basis::IDENTITY,
@@ -360,13 +373,15 @@ impl FluoriteCastCfgHitDetection {
         })
     }
     #[func]
-    pub fn new_by_shape(hit_collision_mask: u32, exclude_list_paths: Array<NodePath>, hit_shape: Gd<Shape3D>) -> Gd<Self> {
+    pub fn new_by_shape(hit_collision_mask: u32, hit_shape: Gd<Shape3D>, exclude_list_paths_shallow: Array<NodePath>, exclude_list_paths_recursive: Array<NodePath>) -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
                 base,
                 collision_detection_mode: CollisionDetectionMode::ByShapecast,
                 hit_collision_mask,
-                exclude_list_paths,
+                exclude_list_paths_shallow,
+                exclude_list_paths_recursive,
+                suppress_invalid_path_warnings: false,
                 hit_shape: Some(hit_shape),
                 shape_margin: 0.0,
                 shape_basis: Basis::IDENTITY,
@@ -384,7 +399,9 @@ impl FluoriteCastCfgHitDetection {
                 base,
                 collision_detection_mode: CollisionDetectionMode::default(),
                 hit_collision_mask: u32::MAX,
-                exclude_list_paths: array![],
+                exclude_list_paths_shallow: array![],
+                exclude_list_paths_recursive: array![],
+                suppress_invalid_path_warnings: false,
                 hit_shape: None,
                 shape_margin: 0.0,
                 shape_basis: Basis::IDENTITY,
