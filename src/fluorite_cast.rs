@@ -357,61 +357,63 @@ impl FluoriteCast {
             godot_warn!("Recursion depth of 16 exceeded in evaluate_raw!");
             return
         }
-        match self.gravity_cache {
-            None => {
-                let binding = self.config.bind();
-                let grav_cfg = binding.cast_gravity_cfg.as_ref().expect("cast_gravity_cfg should always exist").bind();
-                let gravity_behavior = grav_cfg.gravity_behavior;
-                let gravity_multiplier = grav_cfg.gravity_multiplier;
-                drop(grav_cfg);
-                drop(binding);
-                match gravity_behavior {
-                    GravityBehavior::UseGlobalGravityRealTime | GravityBehavior::UseCurrentGravityRealTime => {
-                        // `get_gravity` returns global gravity if `CollisionShape3D` is missing
-                        self.current_velocity += ((self.base().get_gravity()*(gravity_multiplier as f32)) + self.current_acceleration)*(delta as f32);
-                    },
-                    _ => { panic!("gravity_cache should exist for cached modes") }
-                }
-            },
-            Some(g) => {
-                let gravity_multiplier = self.config.bind().cast_gravity_cfg.as_ref().expect("cast_gravity_cfg should always exist").bind().gravity_multiplier;
-                self.current_velocity += (g*(gravity_multiplier as f32) + self.current_acceleration)*(delta as f32);
-            },
-        }
-        let self_config_binding = self.config.bind();
-        let cast_fluid_dynamics_cfg_bind = self_config_binding.cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind();
-        let fluid_dynamics_fidelity = cast_fluid_dynamics_cfg_bind.fluid_dynamics_fidelity;
-        let fluid_dynamics_behavior = cast_fluid_dynamics_cfg_bind.fluid_dynamics_behavior;
-        drop(cast_fluid_dynamics_cfg_bind);
-        drop(self_config_binding);
-        let ambient_airspeed = self.ambient_airspeed_cache.unwrap_or_else(|| {
-            match fluid_dynamics_behavior {
-                FluidDynamicsBehavior::UseGlobalFluidRealTime => {
-                    self.get_global_fluid_config().bind().ambient_airspeed
+        if !override_dist {
+            match self.gravity_cache {
+                None => {
+                    let binding = self.config.bind();
+                    let grav_cfg = binding.cast_gravity_cfg.as_ref().expect("cast_gravity_cfg should always exist").bind();
+                    let gravity_behavior = grav_cfg.gravity_behavior;
+                    let gravity_multiplier = grav_cfg.gravity_multiplier;
+                    drop(grav_cfg);
+                    drop(binding);
+                    match gravity_behavior {
+                        GravityBehavior::UseGlobalGravityRealTime | GravityBehavior::UseCurrentGravityRealTime => {
+                            // `get_gravity` returns global gravity if `CollisionShape3D` is missing
+                            self.current_velocity += ((self.base().get_gravity()*(gravity_multiplier as f32)) + self.current_acceleration)*(delta as f32);
+                        },
+                        _ => { panic!("gravity_cache should exist for cached modes") }
+                    }
                 },
-                FluidDynamicsBehavior::UseCurrentFluidRealTime => {
-                    self.get_current_fluid_config().bind().ambient_airspeed
-                },
-                _ => {
-                    panic!("fluid_dynamics_behavior was not *RealTime while ambient_airspeed_cache was None!")
+                Some(g) => {
+                    let gravity_multiplier = self.config.bind().cast_gravity_cfg.as_ref().expect("cast_gravity_cfg should always exist").bind().gravity_multiplier;
+                    self.current_velocity += (g*(gravity_multiplier as f32) + self.current_acceleration)*(delta as f32);
                 },
             }
-        });
-        match fluid_dynamics_fidelity {
-            FluidDynamicsFidelity::Ignore => {}, // No-op
-            FluidDynamicsFidelity::OnlyAmbientAirspeed => {
-                self.current_velocity += ambient_airspeed*(delta as f32);
-            },
-            FluidDynamicsFidelity::DragCoefficient => {
-                self.current_velocity += ambient_airspeed*(delta as f32);
-                let external_airspeed = self.current_velocity - ambient_airspeed;
-                self.current_velocity += self.compute_drag_ideal(external_airspeed.length() as f64, external_airspeed.normalized())*(delta as f32);
-            },
-            FluidDynamicsFidelity::DragCoefficientAndMach => {
-                self.current_velocity += ambient_airspeed*(delta as f32);
-                let external_airspeed = self.current_velocity - ambient_airspeed;
-                self.current_velocity += self.compute_drag_full_approx(external_airspeed.length() as f64, external_airspeed.normalized())*(delta as f32);
-            },
+            let self_config_binding = self.config.bind();
+            let cast_fluid_dynamics_cfg_bind = self_config_binding.cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind();
+            let fluid_dynamics_fidelity = cast_fluid_dynamics_cfg_bind.fluid_dynamics_fidelity;
+            let fluid_dynamics_behavior = cast_fluid_dynamics_cfg_bind.fluid_dynamics_behavior;
+            drop(cast_fluid_dynamics_cfg_bind);
+            drop(self_config_binding);
+            let ambient_airspeed = self.ambient_airspeed_cache.unwrap_or_else(|| {
+                match fluid_dynamics_behavior {
+                    FluidDynamicsBehavior::UseGlobalFluidRealTime => {
+                        self.get_global_fluid_config().bind().ambient_airspeed
+                    },
+                    FluidDynamicsBehavior::UseCurrentFluidRealTime => {
+                        self.get_current_fluid_config().bind().ambient_airspeed
+                    },
+                    _ => {
+                        panic!("fluid_dynamics_behavior was not *RealTime while ambient_airspeed_cache was None!")
+                    },
+                }
+            });
+            match fluid_dynamics_fidelity {
+                FluidDynamicsFidelity::Ignore => {}, // No-op
+                FluidDynamicsFidelity::OnlyAmbientAirspeed => {
+                    self.current_velocity += ambient_airspeed*(delta as f32);
+                },
+                FluidDynamicsFidelity::DragCoefficient => {
+                    self.current_velocity += ambient_airspeed*(delta as f32);
+                    let external_airspeed = self.current_velocity - ambient_airspeed;
+                    self.current_velocity += self.compute_drag_ideal(external_airspeed.length() as f64, external_airspeed.normalized())*(delta as f32);
+                },
+                FluidDynamicsFidelity::DragCoefficientAndMach => {
+                    self.current_velocity += ambient_airspeed*(delta as f32);
+                    let external_airspeed = self.current_velocity - ambient_airspeed;
+                    self.current_velocity += self.compute_drag_full_approx(external_airspeed.length() as f64, external_airspeed.normalized())*(delta as f32);
+                },
+            }
         }
         let vel = self.current_velocity;
         let base = self.base();
@@ -422,18 +424,16 @@ impl FluoriteCast {
             false => { vel*(delta as f32) },
         };
 
-        let res = self.try_intersect(starting_pos, starting_pos + dist); // TODO: Finish integrating this
+        let res = self.try_intersect(starting_pos, starting_pos + dist);
         if let Some(cast_result) = res {
             godot_print!("Got an intersection");
             let has_penetrated = self.try_penetrate(cast_result.clone());
-            // enable these again if we find the need to do so
-
             let self_clo = self.object_to_owned().clone();
             if !has_penetrated {
                 let mut base_mut = self.base_mut();
                 base_mut.set_global_position(cast_result.bind().position);
                 drop(base_mut);
-                self.signals().terminated().emit_tuple((self_clo, cast_result)); // tail of block, so no need to clone cast_result
+                self.signals().terminated().emit_tuple((self_clo, cast_result));
 
                 let self_config_binding = self.config.bind();
                 let cast_on_hit_cfg_bind = self_config_binding.cast_on_hit_cfg.as_ref().expect("cast_on_hit_cfg should always exist").bind();
@@ -447,14 +447,15 @@ impl FluoriteCast {
             } else {
                 let mut base_mut = self.base_mut();
                 base_mut.set_global_position(cast_result.bind().position);
+                let march_by = cast_result.bind().march_by;
                 drop(base_mut);
-                self.signals().penetrated().emit_tuple((self_clo, cast_result.clone()));
+                self.signals().penetrated().emit_tuple((self_clo, cast_result));
                 if !override_dist {
                     self.alive_for += delta;
                     self.distance_covered += dist.length();
                 }
                 // We recurse with a smaller slice to keep casting in this frame
-                self.evaluate_raw(0.0, forced, true, dist - cast_result.bind().march_by, recursion_depth + 1);
+                self.evaluate_raw(0.0, forced, true, dist - march_by, recursion_depth + 1);
             }
         } else {
             let mut base_mut = self.base_mut();
