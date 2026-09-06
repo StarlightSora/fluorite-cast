@@ -421,11 +421,16 @@ pub struct FluoriteCastCfgOnHit {
     #[export]
     /// Needs to implement:
     /// `try_penetrate` or `TryPenetrate` => signature `(FluoriteCast, FluoriteSpaceCastResult) -> bool`
+    /// `cast_raw_evaluated` or `CastRawEvaluated` => signature `(FluoriteCast, Vector3, float, bool) -> bool`
     pub on_hit_methods_holder: Option<Gd<Resource>>,
 
     #[export]
     pub try_penetrate_via: MaybeExecuteCodeVia,
     pub try_penetrate_rs: Option<Box<dyn FnMut(Gd<FluoriteCast>, Gd<FluoriteSpaceCastResult>) -> bool>>,
+
+    #[export]
+    pub cast_raw_evaluated_via: MaybeExecuteCodeVia,
+    pub cast_raw_evaluated_rs: Option<Box<dyn FnMut(Gd<FluoriteCast>, Vector3, f64, bool) -> ()>>,
 
     #[export]
     #[init(val = true)]
@@ -434,9 +439,10 @@ pub struct FluoriteCastCfgOnHit {
 #[godot_api]
 impl FluoriteCastCfgOnHit {
     #[func]
-    fn new_config(
+    pub fn new_config(
         on_hit_methods_holder: Option<Gd<Resource>>,
         try_penetrate_via: MaybeExecuteCodeVia,
+        cast_raw_evaluated_via: MaybeExecuteCodeVia,
         auto_queue_free_on_terminate: bool,
     ) -> Gd<Self> {
         Gd::from_init_fn(|base| {
@@ -445,19 +451,44 @@ impl FluoriteCastCfgOnHit {
                 on_hit_methods_holder,
                 try_penetrate_via,
                 try_penetrate_rs: None,
+                cast_raw_evaluated_via,
+                cast_raw_evaluated_rs: None,
                 auto_queue_free_on_terminate,
             }
         })
     }
     #[func]
-    fn new_default() -> Gd<Self> {
+    pub fn new_default() -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
                 base,
                 on_hit_methods_holder: None,
                 try_penetrate_via: MaybeExecuteCodeVia::default(),
                 try_penetrate_rs: None,
+                cast_raw_evaluated_via: MaybeExecuteCodeVia::default(),
+                cast_raw_evaluated_rs: None,
                 auto_queue_free_on_terminate: true,
+            }
+        })
+    }
+
+    pub fn new_from_rs(
+        on_hit_methods_holder: Option<Gd<Resource>>,
+        try_penetrate_via: MaybeExecuteCodeVia,
+        try_penetrate_rs: Option<Box<dyn FnMut(Gd<FluoriteCast>, Gd<FluoriteSpaceCastResult>) -> bool>>,
+        cast_raw_evaluated_via: MaybeExecuteCodeVia,
+        cast_raw_evaluated_rs: Option<Box<dyn FnMut(Gd<FluoriteCast>, Vector3, f64, bool) -> ()>>,
+        auto_queue_free_on_terminate: bool,
+    ) -> Gd<Self> {
+        Gd::from_init_fn(|base| {
+            Self {
+                base,
+                on_hit_methods_holder,
+                try_penetrate_via,
+                try_penetrate_rs,
+                cast_raw_evaluated_via,
+                cast_raw_evaluated_rs,
+                auto_queue_free_on_terminate,
             }
         })
     }

@@ -424,9 +424,47 @@ impl FluoriteCast {
             false => { vel*(delta as f32) },
         };
 
+        let exec_callback = |this: &mut Self| {
+            let self_gd = this.to_gd();
+            let mut config_binding = this.config.bind_mut();
+            let mut cast_on_hit_cfg_bind = config_binding.cast_on_hit_cfg.as_mut().expect("cast_on_hit_cfg should always exist").bind_mut();
+            let cast_raw_evaluated_via = cast_on_hit_cfg_bind.cast_raw_evaluated_via;
+            match cast_raw_evaluated_via {
+                MaybeExecuteCodeVia::ViaRustFnMut 
+                    if let Some(associated_closure) = cast_on_hit_cfg_bind.cast_raw_evaluated_rs.as_mut() => {
+                        associated_closure(self_gd, dist, delta, override_dist);
+                    },
+                MaybeExecuteCodeVia::ViaMethodOnResourceSnakeCase
+                    if let Some(method_holder) = cast_on_hit_cfg_bind.on_hit_methods_holder.as_mut()
+                    && method_holder.has_method("cast_raw_evaluated") => {
+                        method_holder.call(
+                            "cast_raw_evaluated",
+                            &[
+                                self_gd.to_variant(),
+                                dist.to_variant(),
+                                delta.to_variant(),
+                                override_dist.to_variant(),
+                            ]
+                        );
+                    },
+                MaybeExecuteCodeVia::ViaMethodOnResourcePascalCase
+                    if let Some(method_holder) = cast_on_hit_cfg_bind.on_hit_methods_holder.as_mut()
+                    && method_holder.has_method("CastRawEvaluated") => {
+                        method_holder.call(
+                            "CastRawEvaluated",
+                            &[
+                                self_gd.to_variant(),
+                                dist.to_variant(),
+                                delta.to_variant(),
+                                override_dist.to_variant(),
+                            ]
+                        );
+                    },
+                _ => {}, // No-op
+            }
+        };
         let res = self.try_intersect(starting_pos, starting_pos + dist);
         if let Some(cast_result) = res {
-            godot_print!("Got an intersection");
             let has_penetrated = self.try_penetrate(cast_result.clone());
             let self_clo = self.object_to_owned().clone();
             if !has_penetrated {
@@ -444,6 +482,7 @@ impl FluoriteCast {
                 if should_cleanup {
                     self.cleanup();
                 }
+                exec_callback(self);
             } else {
                 let mut base_mut = self.base_mut();
                 base_mut.set_global_position(cast_result.bind().position);
@@ -454,6 +493,7 @@ impl FluoriteCast {
                     self.alive_for += delta;
                     self.distance_covered += dist.length();
                 }
+                exec_callback(self);
                 // We recurse with a smaller slice to keep casting in this frame
                 self.evaluate_raw(0.0, forced, true, dist - march_by, recursion_depth + 1);
             }
@@ -465,6 +505,7 @@ impl FluoriteCast {
                 self.alive_for += delta;
                 self.distance_covered += dist.length();
             }
+            exec_callback(self);
         }
     }
     #[func]
