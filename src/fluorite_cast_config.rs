@@ -270,7 +270,7 @@ pub struct FluoriteCastCfgHitDetection {
     #[init(val = u32::MAX)]
     pub hit_collision_mask: u32,
     #[export]
-    pub exclude_list_paths: Array<NodePath>,
+    pub exclude_list_paths: Array<NodePath>, // TODO: Not in use yet
     #[export]
     #[init(val = None)]
     pub hit_shape: Option<Gd<Shape3D>>,

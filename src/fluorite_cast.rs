@@ -95,6 +95,10 @@ pub struct FluoriteCast {
     global_fluid: Option<Gd<FluoriteFluidConfig>>,
     #[var]
     custom_data: VarDictionary,
+    #[var]
+    query_params_cache_ray: Option<Gd<PhysicsRayQueryParameters3D>>,
+    #[var]
+    query_params_cache_shape: Option<Gd<PhysicsShapeQueryParameters3D>>,
 }
 
 #[godot_api]
@@ -127,15 +131,20 @@ impl FluoriteCast {
                 custom_data,
                 disabled: false,
                 is_cleaning_up: false,
+                query_params_cache_ray: None,
+                query_params_cache_shape: None,
             }
         });
         // The base needs to be `StaticBody3D`, and a `CollisionShape3D` is needed so we can use `get_gravity` for `UseCurrentGravityRealTime` mode
         let mut gd_colshape3d = None;
 
         let mut new_node_bind = new_node.bind_mut();
-        let collision_mask_data = new_node_bind.config.bind().area_collision_mask;
-        let gravity_behavior = new_node_bind.config.bind().cast_gravity_cfg.as_ref().expect("Should always exist").bind().gravity_behavior;
-        let fluid_dynamics_behavior = new_node_bind.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("Should always exist").bind().fluid_dynamics_behavior;
+        let cfg_binding = new_node_bind.config.bind();
+        let collision_mask_data = cfg_binding.area_collision_mask;
+        let gravity_behavior = cfg_binding.cast_gravity_cfg.as_ref().expect("cast_gravity_cfg should always exist").bind().gravity_behavior;
+        let fluid_dynamics_behavior = cfg_binding.cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().fluid_dynamics_behavior;
+        let collision_detection_mode = cfg_binding.cast_hit_detection_cfg.as_ref().expect("cast_hit_detection_cfg should always exist").bind().collision_detection_mode;
+        drop(cfg_binding);
         match gravity_behavior {
             GravityBehavior::Ignore => {
                 new_node_bind.gravity_cache.replace(Vector3::ZERO);
@@ -149,9 +158,9 @@ impl FluoriteCast {
             GravityBehavior::UseCurrentGravityRealTime => {
                 // `CollisionShape3D` is only needed for real-time local gravity polling
                 gd_colshape3d.replace(CollisionShape3D::new_alloc());
-                let some_cs3d = gd_colshape3d.as_mut().expect("Added right above");
+                let some_cs3d = gd_colshape3d.as_mut().expect("gd_colshape3d is replaced with Some right above, is the machine out of memory?");
                 some_cs3d.set_name("_FluoriteCastGravityPollingCS3D");
-                some_cs3d.set_shape(&new_node_bind.config.bind().shape.clone().expect("Shape should always be assigned"));
+                some_cs3d.set_shape(&new_node_bind.config.bind().shape.clone().expect("shape of config should always be assigned"));
             },
         }
         match fluid_dynamics_behavior {
@@ -169,6 +178,35 @@ impl FluoriteCast {
             },
             FluidDynamicsBehavior::UseGlobalFluidRealTime | FluidDynamicsBehavior::UseCurrentFluidRealTime
                 => {}, // No-op
+        }
+        match collision_detection_mode {
+            CollisionDetectionMode::Ignore => {}, // No-op
+            CollisionDetectionMode::ByRaycast => {
+                let binding = new_node_bind.config.bind();
+                let hit_detection_cfg = binding.cast_hit_detection_cfg.as_ref().expect("cast_hit_detection_cfg should always exist").bind();
+                let mut query_params = PhysicsRayQueryParameters3D::new_gd();
+                query_params.set_collision_mask(hit_detection_cfg.hit_collision_mask);
+                query_params.set_collide_with_areas(hit_detection_cfg.should_collide_with_areas);
+                query_params.set_collide_with_bodies(hit_detection_cfg.should_collide_with_bodies);
+                query_params.set_hit_back_faces(hit_detection_cfg.should_hit_back_faces);
+                query_params.set_hit_from_inside(hit_detection_cfg.should_hit_from_inside);
+                query_params.set_exclude(&array![new_node_bind.base().get_rid()]); // TODO: integrate exclude_list_paths
+                drop(hit_detection_cfg); drop(binding);
+                let _ = new_node_bind.query_params_cache_ray.insert(query_params);
+            },
+            CollisionDetectionMode::ByShapecast => {
+                let binding = new_node_bind.config.bind();
+                let hit_detection_cfg = binding.cast_hit_detection_cfg.as_ref().expect("cast_hit_detection_cfg should always exist").bind();
+                let mut query_params = PhysicsShapeQueryParameters3D::new_gd();
+                query_params.set_collision_mask(hit_detection_cfg.hit_collision_mask);
+                query_params.set_collide_with_areas(hit_detection_cfg.should_collide_with_areas);
+                query_params.set_collide_with_bodies(hit_detection_cfg.should_collide_with_bodies);
+                query_params.set_shape(hit_detection_cfg.hit_shape.as_ref().expect("hit_shape should always exist"));
+                query_params.set_margin(hit_detection_cfg.shape_margin as f32);
+                query_params.set_exclude(&array![new_node_bind.base().get_rid()]);
+                drop(hit_detection_cfg); drop(binding);
+                let _ = new_node_bind.query_params_cache_shape.insert(query_params);
+            },
         }
         new_node_bind.assign_payload(payload);
         drop(new_node_bind);
@@ -211,7 +249,7 @@ impl FluoriteCast {
         let estimated_dist = (vel*(delta as f32)).length() as f64;
         let slice_count: i64;
         let cfg_bind = self.config.bind();
-        let cast_fidelity_cfg_bind = cfg_bind.cast_fidelity_cfg.as_ref().expect("Should always exist").bind();
+        let cast_fidelity_cfg_bind = cfg_bind.cast_fidelity_cfg.as_ref().expect("cast_fidelity_cfg should always exist").bind();
         match cast_fidelity_cfg_bind.super_sampling_mode {
             SuperSamplingMode::Never => {
                 slice_count = 1;
@@ -264,8 +302,12 @@ impl FluoriteCast {
         }
         match self.gravity_cache {
             None => {
-                let gravity_behavior = self.config.bind().cast_gravity_cfg.as_ref().expect("Should always exist").bind().gravity_behavior;
-                let gravity_multiplier = self.config.bind().cast_gravity_cfg.as_ref().expect("Should always exist").bind().gravity_multiplier;
+                let binding = self.config.bind();
+                let grav_cfg = binding.cast_gravity_cfg.as_ref().expect("cast_gravity_cfg should always exist").bind();
+                let gravity_behavior = grav_cfg.gravity_behavior;
+                let gravity_multiplier = grav_cfg.gravity_multiplier;
+                drop(grav_cfg);
+                drop(binding);
                 match gravity_behavior {
                     GravityBehavior::UseGlobalGravityRealTime | GravityBehavior::UseCurrentGravityRealTime => {
                         // `get_gravity` returns global gravity if `CollisionShape3D` is missing
@@ -275,12 +317,12 @@ impl FluoriteCast {
                 }
             },
             Some(g) => {
-                let gravity_multiplier = self.config.bind().cast_gravity_cfg.as_ref().expect("Should always exist").bind().gravity_multiplier;
+                let gravity_multiplier = self.config.bind().cast_gravity_cfg.as_ref().expect("cast_gravity_cfg should always exist").bind().gravity_multiplier;
                 self.current_velocity += (g*(gravity_multiplier as f32) + self.current_acceleration)*(delta as f32);
             },
         }
         let self_config_binding = self.config.bind();
-        let cast_fluid_dynamics_cfg_bind = self_config_binding.cast_fluid_dynamics_cfg.as_ref().expect("Should always exist").bind();
+        let cast_fluid_dynamics_cfg_bind = self_config_binding.cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind();
         let fluid_dynamics_fidelity = cast_fluid_dynamics_cfg_bind.fluid_dynamics_fidelity;
         let fluid_dynamics_behavior = cast_fluid_dynamics_cfg_bind.fluid_dynamics_behavior;
         drop(cast_fluid_dynamics_cfg_bind);
@@ -337,7 +379,7 @@ impl FluoriteCast {
                 self.signals().terminated().emit_tuple((self_clo, cast_result)); // tail of block, so no need to clone cast_result
 
                 let self_config_binding = self.config.bind();
-                let cast_on_hit_cfg_bind = self_config_binding.cast_on_hit_cfg.as_ref().expect("Should always exist").bind();
+                let cast_on_hit_cfg_bind = self_config_binding.cast_on_hit_cfg.as_ref().expect("cast_on_hit_cfg should always exist").bind();
                 let should_cleanup = cast_on_hit_cfg_bind.auto_queue_free_on_terminate;
                 drop(cast_on_hit_cfg_bind);
                 drop(self_config_binding);
@@ -414,7 +456,7 @@ impl FluoriteCast {
     pub fn compute_drag_const_component(&self, with_fluid_cfg: Gd<FluoriteFluidConfig>) -> f64 {
         let binding = self.config.bind();
         let current_fluid_cfg = with_fluid_cfg.bind();
-        let cast_fluid_dynamics_cfg = binding.cast_fluid_dynamics_cfg.as_ref().expect("Should always exist").bind();
+        let cast_fluid_dynamics_cfg = binding.cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind();
 
         // mm2 -> m2 requires dividing by 1000 two times
         -0.5 * current_fluid_cfg.fluid_density_kgm3 * (cast_fluid_dynamics_cfg.projectile_reference_area_mm2 / 1000.0 / 1000.0) * cast_fluid_dynamics_cfg.drag_coefficient
@@ -425,7 +467,7 @@ impl FluoriteCast {
     }
     #[func]
     pub fn compute_drag_dyn_component_mach(&self, airspeed: f64) -> f64 {
-        if let Some(curve) = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("Should always exist").bind().mach_based_drag_multiplier.as_ref() {
+        if let Some(curve) = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().mach_based_drag_multiplier.as_ref() {
             curve.sample(self.get_mach_number(airspeed) as f32) as f64
         } else {
             1.0
@@ -434,7 +476,7 @@ impl FluoriteCast {
     #[func]
     pub fn get_mach_number(&self, airspeed: f64) -> f64 {
         airspeed / self.speed_of_sound_cache.unwrap_or_else(|| {
-            let fluid_dynamics_behavior = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("Should always exist").bind().fluid_dynamics_behavior;
+            let fluid_dynamics_behavior = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().fluid_dynamics_behavior;
             match fluid_dynamics_behavior {
                 FluidDynamicsBehavior::UseGlobalFluidRealTime => {
                     self.get_global_fluid_config().bind().speed_of_sound
@@ -451,7 +493,7 @@ impl FluoriteCast {
     #[func]
     pub fn get_drag_const_component(&self) -> f64 {
         self.fluid_drag_const_cache.unwrap_or_else(|| {
-            let fluid_dynamics_behavior = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("Should always exist").bind().fluid_dynamics_behavior;
+            let fluid_dynamics_behavior = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().fluid_dynamics_behavior;
             match fluid_dynamics_behavior {
                 FluidDynamicsBehavior::UseGlobalFluidRealTime => {
                     self.compute_drag_const_component(self.get_global_fluid_config())
@@ -473,7 +515,7 @@ impl FluoriteCast {
         // TODO: Maybe provide a builtin try_penetrate_rs closure later?
         let self_clo = self.object_to_owned().clone(); // this is a new handle towards itself, so we can pass it into closures without making borrowck pissed
         let mut self_config_binding = self.config.bind_mut();
-        let mut cast_on_hit_cfg_bind = self_config_binding.cast_on_hit_cfg.as_mut().expect("Should always exist").bind_mut();
+        let mut cast_on_hit_cfg_bind = self_config_binding.cast_on_hit_cfg.as_mut().expect("cast_on_hit_cfg should always exist").bind_mut();
         let try_penetrate_via = cast_on_hit_cfg_bind.try_penetrate_via;
         match try_penetrate_via {
             MaybeExecuteCodeVia::ViaRustFnMut if let Some(associated_closure) = cast_on_hit_cfg_bind.try_penetrate_rs.as_mut() => {
@@ -505,26 +547,17 @@ impl FluoriteCast {
         }
     }
     #[func]
-    pub fn try_intersect(&self, from: Vector3, to: Vector3) -> Option<Gd<FluoriteSpaceCastResult>> {
+    pub fn try_intersect(&mut self, from: Vector3, to: Vector3) -> Option<Gd<FluoriteSpaceCastResult>> {
         let binding = self.config.bind();
-        let hit_detection_cfg = binding.cast_hit_detection_cfg.as_ref().expect("Should always exist").bind();
+        let hit_detection_cfg = binding.cast_hit_detection_cfg.as_ref().expect("hit_detection_cfg should always exist").bind();
         let space_cast_result = match hit_detection_cfg.collision_detection_mode {
             CollisionDetectionMode::Ignore => { SpaceCastResult::HitNothing },
             CollisionDetectionMode::ByRaycast => {
-                let mut direct_space = self.base().get_world_3d().expect("Should exist").get_direct_space_state().expect("Should exist");
-                let mut query_params = PhysicsRayQueryParameters3D::new_gd();
+                let mut direct_space = self.base().get_world_3d().expect("world_3d should exist").get_direct_space_state().expect("direct_space_state should exist");
+                let query_params = self.query_params_cache_ray.as_mut().expect("query_params_cache_ray should exist in ByRaycast mode");
                 query_params.set_from(from);
                 query_params.set_to(to);
-                // TODO: Maybe cache query_params into the struct itself upon construction and wrap it in a `Cow` or something like that?? 
-                // It's kind of stupid to reconstruct this entire thing every single time
-                // TODO 2: Yeah it should be cached, especially because of the exclude field, which should be able to be written to in runtime
-                query_params.set_collision_mask(hit_detection_cfg.hit_collision_mask);
-                query_params.set_collide_with_areas(hit_detection_cfg.should_collide_with_areas);
-                query_params.set_collide_with_bodies(hit_detection_cfg.should_collide_with_bodies);
-                query_params.set_hit_back_faces(hit_detection_cfg.should_hit_back_faces);
-                query_params.set_hit_from_inside(hit_detection_cfg.should_hit_from_inside);
-                query_params.set_exclude(&array![self.base().get_rid()]); // TODO: Apply exclude_list_paths in cfg (maybe cache this first)
-                let res = direct_space.intersect_ray(&query_params);
+                let res = direct_space.intersect_ray(&*query_params);
                 if res.contains_key("normal") {
                     let res_pos = res.get("position").expect("position should always exist").to::<Vector3>();
                     SpaceCastResult::HitByRaycast(res, res_pos - from)
@@ -533,8 +566,8 @@ impl FluoriteCast {
                 }
             },
             CollisionDetectionMode::ByShapecast => {
-                let mut direct_space = self.base().get_world_3d().expect("Should exist").get_direct_space_state().expect("Should exist");
-                let mut query_params = PhysicsShapeQueryParameters3D::new_gd();
+                let mut direct_space = self.base().get_world_3d().expect("world_3d should exist").get_direct_space_state().expect("direct_space_state should exist");
+                let query_params = self.query_params_cache_shape.as_mut().expect("query_params_cache_shape should exist in ByShapecast mode");
                 let diff_v3 = to - from;
                 query_params.set_motion(diff_v3);
                 query_params.set_transform(Transform3D::new(
@@ -542,13 +575,7 @@ impl FluoriteCast {
                     * Basis::looking_at(self.current_velocity),
                     from
                 )); // TODO: Basis::looking_at is a possible placeholder, recheck later
-                query_params.set_collision_mask(hit_detection_cfg.hit_collision_mask);
-                query_params.set_collide_with_areas(hit_detection_cfg.should_collide_with_areas);
-                query_params.set_collide_with_bodies(hit_detection_cfg.should_collide_with_bodies);
-                query_params.set_shape(hit_detection_cfg.hit_shape.as_ref().expect("hit_shape should always exist"));
-                query_params.set_margin(hit_detection_cfg.shape_margin as f32);
-                query_params.set_exclude(&array![self.base().get_rid()]); // TODO: Apply exclude_list_paths in cfg (maybe cache this first)
-                let proportions = direct_space.cast_motion(&query_params);
+                let proportions = direct_space.cast_motion(&*query_params);
                 let safe_proportion = proportions.get(0).expect("get(0) should be Some, is hit_shape null?");
                 if safe_proportion >= 1.0 {
                     SpaceCastResult::HitNothing
@@ -560,12 +587,12 @@ impl FluoriteCast {
                         * Basis::looking_at(self.current_velocity),
                         from + unsafe_march
                     ));
-                    let mut res = direct_space.get_rest_info(&query_params);
+                    let mut res = direct_space.get_rest_info(&*query_params);
 
                     if res.contains_key("normal") {
-                        let res_cid: i64 = res.get("collider_id").expect("Should exist").try_to().expect("Should be an i64");
+                        let res_cid: i64 = res.get("collider_id").expect("collider_id should exist").try_to().expect("Should be an i64");
                         let mut res_creal = None;
-                        let res2 = direct_space.intersect_shape_ex(&query_params)
+                        let res2 = direct_space.intersect_shape_ex(&*query_params)
                             .max_results(8)
                             .done();
                         for entry in res2.iter_shared() {
@@ -575,7 +602,8 @@ impl FluoriteCast {
                             }
                         }
                         if res_creal.is_some() {
-                            let _ = res.insert("collider", &res_creal.expect("Checked above"));
+                            // probably can be written in a more idiomatic way, but I forgot how
+                            let _ = res.insert("collider", &res_creal.expect("Infallible, checked above"));
                         } else {
                             push_warning(&["Could not infer collider, so `collider` will be null".to_variant()]);
                         }
@@ -592,24 +620,24 @@ impl FluoriteCast {
             SpaceCastResult::HitByRaycast(res, marched_by) => {
                 // collider, collider_id, normal, position, face_index, rid, shape
                 Some(FluoriteSpaceCastResult::new_result(
-                    res.get("position").unwrap().to(),
-                    res.get("normal").unwrap().to(),
-                    res.get("rid").unwrap().to::<Rid>().to_u64() as i64,
-                    res.get("collider").map(|some| some.to()),
-                    res.get("collider_id").unwrap().to(),
-                    res.get("shape").unwrap().to(),
+                    res.get("position").expect("position should exist").try_to().expect("position should be Vector3"),
+                    res.get("normal").expect("normal should exist").try_to().expect("normal should be Vector3"),
+                    res.get("rid").expect("rid should exist").try_to::<Rid>().expect("rid should be Rid").to_u64() as i64,
+                    res.get("collider").map(|some| some.try_to().expect("collider should be Gd<Node3D>")),
+                    res.get("collider_id").expect("collider_id should exist").try_to().expect("collider_id should be i64"),
+                    res.get("shape").expect("shape should exist").try_to().expect("shape should be i64"),
                     marched_by,
                 ))
             },
             SpaceCastResult::HitByShapecast(res, marched_by) => {
                 // collider (injected manually), collider_id, linear_velocity, normal, point, rid, shape
                 Some(FluoriteSpaceCastResult::new_result(
-                    res.get("point").unwrap().to(),
-                    res.get("normal").unwrap().to(),
-                    res.get("rid").unwrap().to::<Rid>().to_u64() as i64,
-                    res.get("collider").map(|some| some.to()),
-                    res.get("collider_id").unwrap().to(),
-                    res.get("shape").unwrap().to(),
+                    res.get("point").expect("point should exist").try_to().expect("point should be Vector3"),
+                    res.get("normal").expect("normal should exist").try_to().expect("normal should be Vector3"),
+                    res.get("rid").expect("rid should exist").try_to::<Rid>().expect("rid should be Rid").to_u64() as i64,
+                    res.get("collider").map(|some| some.try_to().expect("collider should be Gd<Node3D>")),
+                    res.get("collider_id").expect("collider_id should exist").try_to().expect("collider_id should be i64"),
+                    res.get("shape").expect("shape should exist").try_to().expect("shape should be i64"),
                     marched_by,
                 ))
             },
