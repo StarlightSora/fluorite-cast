@@ -11,7 +11,12 @@ pub mod builtins;
 
 use godot::{
     classes::{
-        CollisionShape3D, IStaticBody3D, PhysicsRayQueryParameters3D, PhysicsShapeQueryParameters3D, ProjectSettings, StaticBody3D,
+        CollisionShape3D, 
+        IStaticBody3D, 
+        PhysicsRayQueryParameters3D, 
+        PhysicsShapeQueryParameters3D, 
+        ProjectSettings, 
+        StaticBody3D,
     },
     global::{
         ceilf,

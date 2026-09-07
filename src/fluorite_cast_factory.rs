@@ -1,4 +1,4 @@
-use godot::prelude::*;
+use godot::{meta::conv::ObjectToOwned, prelude::*};
 
 use hashbrown::HashSet;
 use crate::prelude::*;
@@ -39,7 +39,13 @@ impl FluoriteCastFactory {
         })
     }
     #[func]
-    pub fn fire_cast(&mut self, from: Transform3D, towards: Vector3, custom_data: VarDictionary, config_override: Option<Gd<FluoriteCastConfig>>) -> Gd<FluoriteCast> {
+    pub fn fire_cast(
+        &mut self,
+        from: Transform3D,
+        towards: Vector3,
+        custom_data: VarDictionary,
+        config_override: Option<Gd<FluoriteCastConfig>>
+    ) -> Gd<FluoriteCast> {
         let mut new_instance = FluoriteCast::new_cast(
             self.parent_to.as_ref().expect("parent_to should exist").clone(),
             self.payload_scene.as_ref().map(|packed_scene| {
@@ -51,10 +57,31 @@ impl FluoriteCastFactory {
             self.global_fluid.as_ref().expect("global_fluid should always exist").clone(),
             custom_data,
         );
-        self.tracked_instances.replace(new_instance.clone());
-        new_instance.bind_mut().fire(from, towards);
-        // TODO: connect signals to proper functions and do cleanup from that list
+        let prev = self.tracked_instances.replace(new_instance.clone());
+        prev.inspect(|x| {
+            godot_warn!("tracked_instances was already occupied with node: {}", x.to_string())
+        });
 
+        // TODO: connect signals to proper functions and do cleanup from that list
+        let self_id = self.object_to_owned().instance_id();
+        new_instance.signals().freeing().connect(move |this| {
+            let maybe_self = Gd::<Self>::try_from_instance_id(self_id);
+            let _  =maybe_self.map(|mut actually_self| {
+                actually_self.bind_mut().on_cast_freeing(this);
+            }).is_err_and(|_| {
+                godot_warn!("Received freeing signal from an instantiated FluoriteCast, but the factory that instantiated it is already freed");
+                true
+            });
+        });
+        
+        new_instance.bind_mut().fire(from, towards);
         new_instance
+    }
+
+    fn on_cast_freeing(&mut self, this: Gd<FluoriteCast>) -> () {
+        let taken = self.tracked_instances.remove(&this);
+        if !taken {
+            godot_warn!("Failed to remove node in tracked_instances: {}", this.to_string());
+        }
     }
 }
