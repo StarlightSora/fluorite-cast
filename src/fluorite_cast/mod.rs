@@ -35,6 +35,7 @@ use super::fluorite_cast_config::{
     CollisionDetectionMode,
     MaybeExecuteCodeVia,
     FluoriteCastCfgHitDetection,
+    ProjectileLookBehavior,
 };
 
 enum SpaceCastResult {
@@ -172,7 +173,7 @@ impl FluoriteCast {
 
         let mut new_node_bind = new_node.bind_mut();
         let cfg_binding = new_node_bind.config.bind();
-        let collision_mask_data = cfg_binding.area_collision_mask;
+        let collision_mask_data = cfg_binding.cast_general_cfg.as_ref().expect("cast_general_cfg").bind().area_collision_mask;
         let gravity_behavior = cfg_binding.cast_gravity_cfg.as_ref().expect("cast_gravity_cfg should always exist").bind().gravity_behavior;
         let fluid_dynamics_behavior = cfg_binding.cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().fluid_dynamics_behavior;
         let hit_detection_cfg_bind = cfg_binding.cast_hit_detection_cfg.as_ref().expect("cast_hit_detection_cfg should always exist").bind();
@@ -195,7 +196,18 @@ impl FluoriteCast {
                 gd_colshape3d.replace(CollisionShape3D::new_alloc());
                 let some_cs3d = gd_colshape3d.as_mut().expect("gd_colshape3d is replaced with Some right above, is the machine out of memory?");
                 some_cs3d.set_name("_FluoriteCastGravityPollingCS3D");
-                some_cs3d.set_shape(&new_node_bind.config.bind().shape.clone().expect("shape of config should always be assigned"));
+                some_cs3d.set_shape(
+                    &new_node_bind
+                        .config
+                        .bind()
+                        .cast_general_cfg
+                        .as_ref()
+                        .expect("cast_general_cfg should always be assigned")
+                        .bind()
+                        .shape
+                        .clone()
+                        .expect("shape of cast_general_cfg should always be assigned")
+                );
             },
         }
         match fluid_dynamics_behavior {
@@ -457,6 +469,17 @@ impl FluoriteCast {
         for _ in 0..slice_count {
             self.evaluate_raw(sliced_delta, forced, false, Vector3::ZERO, 1);
         }
+        let look_behavior = self.config
+            .bind()
+            .cast_general_cfg
+            .as_ref()
+            .expect("cast_general_cfg should always exist")
+            .bind()
+            .projectile_look_behavior;
+        if let ProjectileLookBehavior::FollowVelocity = look_behavior {
+            let current_vel = self.current_velocity;
+            self.base_mut().set_basis(Basis::looking_at(current_vel));
+        }
         self.try_expire();
     }
     #[func]
@@ -635,12 +658,16 @@ impl FluoriteCast {
         let alive_for = self.alive_for;
         let distance_covered = self.distance_covered;
         let cfg_bind = self.config.bind();
+        let general_bind = cfg_bind.cast_general_cfg.as_ref().expect("cast_general_cfg should always exist").bind();
         let should_free: bool;
-        if alive_for > cfg_bind.max_alive_time {
+        if alive_for > general_bind.max_alive_time {
             should_free = true
-        } else if distance_covered > (cfg_bind.max_total_length as f32) {
+        } else if distance_covered > (general_bind.max_total_length as f32) {
             should_free = true
-        } else { should_free = false }
+        } else {
+            should_free = false
+        }
+        drop(general_bind);
         drop(cfg_bind);
         if should_free {
             let self_clo = self.object_to_owned();

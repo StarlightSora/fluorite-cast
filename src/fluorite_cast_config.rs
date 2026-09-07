@@ -1,4 +1,4 @@
-use godot::{classes::{Curve, Shape3D}, prelude::*};
+use godot::{classes::{Curve, Shape3D, SphereShape3D}, prelude::*};
 
 use super::fluorite_cast::{FluoriteCast, FluoriteSpaceCastResult};
 
@@ -13,7 +13,7 @@ pub enum EvaluateMode {
 
 #[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
 #[godot(via = i64)]
-pub enum LookBehavior {
+pub enum ProjectileLookBehavior {
     #[default]
     FollowVelocity, // TODO: Not in use yet
     Manual,
@@ -560,11 +560,9 @@ impl FluoriteCastCfgMethods {
     }
 }
 
-////////////////
-
 #[derive(GodotClass)]
 #[class(init, base=Resource)]
-pub struct FluoriteCastConfig {
+pub struct FluoriteCastCfgGeneral {
     base: Base<Resource>,
     #[export]
     pub shape: Option<Gd<Shape3D>>,
@@ -578,7 +576,57 @@ pub struct FluoriteCastConfig {
     #[init(val = 2000.0)]
     pub max_total_length: f64,
     #[export]
+    #[init(val = ProjectileLookBehavior::default())]
+    pub projectile_look_behavior: ProjectileLookBehavior,
+}
+#[godot_api]
+impl FluoriteCastCfgGeneral {
+    #[func]
+    pub fn new_config(
+        shape: Gd<Shape3D>,
+        projectile_look_behavior: ProjectileLookBehavior,
+        area_collision_mask: u32,
+        max_alive_time: f64,
+        max_total_length: f64
+    ) -> Gd<Self> {
+        Gd::from_init_fn(|base| {
+            Self {
+                base,
+                shape: Some(shape),
+                area_collision_mask,
+                max_alive_time,
+                max_total_length,
+                projectile_look_behavior,
+            }
+        })
+    }
+    #[func]
+    pub fn new_default() -> Gd<Self> {
+        Gd::from_init_fn(|base| {
+            let mut some_sphere = SphereShape3D::new_gd();
+            some_sphere.set_radius(0.001);
+            Self {
+                base,
+                shape: Some(some_sphere.upcast()),
+                area_collision_mask: u32::MAX,
+                max_alive_time: 15.0,
+                max_total_length: 2000.0,
+                projectile_look_behavior: ProjectileLookBehavior::default(),
+            }
+        })
+    }
+}
+
+////////////////
+
+#[derive(GodotClass)]
+#[class(init, base=Resource)]
+pub struct FluoriteCastConfig {
+    base: Base<Resource>,
+    #[export]
     pub evaluate_mode: EvaluateMode,
+    #[export]
+    pub cast_general_cfg: Option<Gd<FluoriteCastCfgGeneral>>,
     #[export]
     pub cast_gravity_cfg: Option<Gd<FluoriteCastCfgGravity>>,
     #[export]
@@ -598,12 +646,9 @@ pub struct FluoriteCastConfig {
 impl FluoriteCastConfig {
     #[func]
     pub fn new_config(
-        shape: Gd<Shape3D>,
-        area_collision_mask: u32,
-        max_alive_time: f64,
-        max_total_length: f64,
         evaluate_mode: EvaluateMode,
         &custom_config: Dictionary<GString, Option<Gd<Resource>>>, // probably don't want to move this, so get a reference and clone it like a Rc
+        cast_general_cfg: Option<Gd<FluoriteCastCfgGeneral>>,
         cast_gravity_cfg: Option<Gd<FluoriteCastCfgGravity>>,
         cast_fidelity_cfg: Option<Gd<FluoriteCastCfgFidelity>>,
         cast_fluid_dynamics_cfg: Option<Gd<FluoriteCastCfgFluidDynamics>>,
@@ -613,11 +658,8 @@ impl FluoriteCastConfig {
         Gd::from_init_fn(|base| {
             Self {
                 base,
-                shape: Some(shape.clone()),
-                area_collision_mask,
-                max_alive_time,
-                max_total_length,
                 evaluate_mode,
+                cast_general_cfg: Some(cast_general_cfg.unwrap_or_else(|| FluoriteCastCfgGeneral::new_default())),
                 cast_gravity_cfg: Some(cast_gravity_cfg.unwrap_or_else(|| FluoriteCastCfgGravity::new_default())),
                 cast_fidelity_cfg: Some(cast_fidelity_cfg.unwrap_or_else(|| FluoriteCastCfgFidelity::new_default())),
                 cast_fluid_dynamics_cfg: Some(cast_fluid_dynamics_cfg.unwrap_or_else(|| FluoriteCastCfgFluidDynamics::new_default())),
@@ -628,15 +670,12 @@ impl FluoriteCastConfig {
         })
     }
     #[func]
-    pub fn new_default_config(shape: Gd<Shape3D>) -> Gd<Self> {
+    pub fn new_default_config() -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
                 base,
-                shape: Some(shape.clone()),
-                area_collision_mask: u32::MAX,
-                max_alive_time: 15.0,
-                max_total_length: 2000.0,
                 evaluate_mode: EvaluateMode::default(),
+                cast_general_cfg: Some(FluoriteCastCfgGeneral::new_default()),
                 cast_gravity_cfg: Some(FluoriteCastCfgGravity::new_default()),
                 cast_fidelity_cfg: Some(FluoriteCastCfgFidelity::new_default()),
                 cast_fluid_dynamics_cfg: Some(FluoriteCastCfgFluidDynamics::new_default()),
