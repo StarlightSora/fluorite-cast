@@ -630,8 +630,9 @@ impl FluoriteCast {
                 exec_callback(self);
             } else {
                 let mut base_mut = self.base_mut();
-                base_mut.set_global_position(cast_result.bind().position);
+                let starting_pos = base_mut.get_global_position();
                 let march_by = cast_result.bind().march_by;
+                base_mut.set_global_position(starting_pos + march_by);//(cast_result.bind().position);
                 drop(base_mut);
                 self.signals().penetrated().emit_tuple((self_clo, cast_result));
                 if !override_dist {
@@ -865,6 +866,7 @@ impl FluoriteCast {
                 } else {
                     let unsafe_proportion = proportions.get(1).expect("get(1) should be Some");
                     let unsafe_march = diff_v3*(unsafe_proportion as f32);
+                    //let safe_march = diff_v3*(safe_proportion as f32);
                     query_params.set_transform(Transform3D::new(
                         hit_detection_cfg.shape_basis
                         * Basis::looking_at(self.current_velocity),

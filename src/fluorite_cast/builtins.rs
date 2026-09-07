@@ -33,6 +33,9 @@ pub struct FluoriteBuiltinConfig {
     #[init(val = "fluorite_builtin_penetratable".to_string_name())]
     pub penetratable_node_group_name: StringName,
     #[export]
+    #[init(val = "fluorite_builtin_always_pen".to_string_name())]
+    pub always_pen_node_group_name: StringName,
+    #[export]
     #[init(val = 4)]
     pub upwards_search_recursion_limit: i64,
     #[export]
@@ -95,14 +98,18 @@ impl FluoriteCast {
                 .try_cast::<FluoriteBuiltinConfig>()
                 .expect("__builtin should map to a FluoriteBuiltinConfig");
             let builtin_cfg = builtin_cfg_binding.bind();
+            let always_pen_group_name = &builtin_cfg.always_pen_node_group_name;
             let target_group_name = &builtin_cfg.penetratable_node_group_name;
+            let max_pen_count = &builtin_cfg.max_penetration_count;
             let mut maybe_valid: Option<Gd<Node>> = Some(collider_gd.to_godot_owned().upcast());
             let recur_limit = builtin_cfg.upwards_search_recursion_limit;
             drop(this_config_binding);
             //godot_warn!("6");
             for _ in 0..=recur_limit {
                 if let Some(actually_valid) = maybe_valid {
-                    if actually_valid.is_in_group(target_group_name) {
+                    if actually_valid.is_in_group(always_pen_group_name) {
+                        return true
+                    } else if actually_valid.is_in_group(target_group_name) {
                         Self::add_ignore_rid(actually_valid, &mut ignore_list, true);
                         match collision_detection_mode {
                             CollisionDetectionMode::Ignore => {
@@ -115,6 +122,17 @@ impl FluoriteCast {
                                 this_binding.query_params_cache_shape.as_mut().expect("query_params_cache_ray should exist").set_exclude(&ignore_list)
                             },
                         };
+                        let state = this_binding.custom_data_rs
+                            .as_mut()
+                            .expect("custom_data_rs should exist") 
+                            .get_mut("__builtin")
+                            .expect("__builtin key should exist")
+                            .downcast_mut::<FluoriteBuiltinState>()
+                            .expect("__builtin should be downcastable to FluoriteBuiltinState");
+                        state.current_penetrated_count += 1;
+                        if state.current_penetrated_count > *max_pen_count {
+                            return false
+                        }
                         return true
                     } else {
                         maybe_valid = actually_valid.get_parent();

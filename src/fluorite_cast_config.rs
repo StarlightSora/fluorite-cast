@@ -15,7 +15,7 @@ pub enum EvaluateMode {
 #[godot(via = i64)]
 pub enum ProjectileLookBehavior {
     #[default]
-    FollowVelocity, // TODO: Not in use yet
+    FollowVelocity,
     Manual,
 }
 
