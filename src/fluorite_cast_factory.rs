@@ -20,12 +20,22 @@ pub struct FluoriteCastFactory {
 
 #[godot_api]
 impl FluoriteCastFactory {
+    //#[signal]
+    //pub fn freeing(this: Gd<FluoriteCast>);
+    #[signal]
+    pub fn expired(this: Gd<FluoriteCast>);
+    #[signal]
+    pub fn terminated(this: Gd<FluoriteCast>, cast_result: Gd<FluoriteSpaceCastResult>);
+    #[signal]
+    pub fn penetrated(this: Gd<FluoriteCast>, cast_result: Gd<FluoriteSpaceCastResult>);
+
     #[func]
     pub fn new_factory(
         parent_to: Gd<Node3D>,
         payload_scene: Option<Gd<PackedScene>>,
         projectile_config: Gd<FluoriteCastConfig>,
         global_fluid: Gd<FluoriteFluidConfig>,
+        // TODO: Instance pooling struct maybe?
     ) -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -44,13 +54,17 @@ impl FluoriteCastFactory {
         from: Transform3D,
         towards: Vector3,
         custom_data: VarDictionary,
-        config_override: Option<Gd<FluoriteCastConfig>>
+        config_override: Option<Gd<FluoriteCastConfig>>,
+        // if you are injecting a payload_override, it must be pre-instantiated, this is a conscious decision for allowing better control on the caller
+        payload_override: Option<Gd<Node3D>>,
     ) -> Gd<FluoriteCast> {
         let mut new_instance = FluoriteCast::new_cast(
             self.parent_to.as_ref().expect("parent_to should exist").clone(),
-            self.payload_scene.as_ref().map(|packed_scene| {
-                packed_scene.try_instantiate_as().expect("payload_scene should extend always Node3D")
-            }),
+            payload_override.map_or_else( // concise, but looks kind of ugly
+                || self.payload_scene.as_ref().map(|packed_scene| {
+                    packed_scene.try_instantiate_as().expect("payload_scene should always extend Node3D, if provided")
+                }
+            ), |payload| Some(payload)),
             config_override.unwrap_or_else(|| {
                 self.projectile_config.as_ref().expect("projectile_config should always exist").clone()
             }),
@@ -62,14 +76,45 @@ impl FluoriteCastFactory {
             godot_warn!("tracked_instances was already occupied with node: {}", x.to_string())
         });
 
-        // TODO: connect signals to proper functions and do cleanup from that list
+        // no, we are not making a decl macro to avoid breaking DRY
         let self_id = self.object_to_owned().instance_id();
         new_instance.signals().freeing().connect(move |this| {
             let maybe_self = Gd::<Self>::try_from_instance_id(self_id);
-            let _  =maybe_self.map(|mut actually_self| {
+            let _  = maybe_self.map(|mut actually_self| {
+                //actually_self.signals().freeing().emit(&this); // is there ever a reason to propagate up the freeing signal??
                 actually_self.bind_mut().on_cast_freeing(this);
             }).is_err_and(|_| {
-                godot_warn!("Received freeing signal from an instantiated FluoriteCast, but the factory that instantiated it is already freed");
+                godot_warn!("Received freeing signal from a FluoriteCast instance, but the factory that instantiated it is already freed");
+                true
+            });
+        });
+        let self_id = self.object_to_owned().instance_id();
+        new_instance.signals().expired().connect(move |this| {
+            let maybe_self = Gd::<Self>::try_from_instance_id(self_id);
+            let _  = maybe_self.map(|actually_self| {
+                actually_self.signals().expired().emit(&this);
+            }).is_err_and(|_| {
+                godot_warn!("Received expired signal from a FluoriteCast instance, but the factory that instantiated it is already freed");
+                true
+            });
+        });
+        let self_id = self.object_to_owned().instance_id();
+        new_instance.signals().terminated().connect(move |this, cast_result| {
+            let maybe_self = Gd::<Self>::try_from_instance_id(self_id);
+            let _  = maybe_self.map(|actually_self| {
+                actually_self.signals().terminated().emit(&this, &cast_result);
+            }).is_err_and(|_| {
+                godot_warn!("Received terminated signal from a FluoriteCast instance, but the factory that instantiated it is already freed");
+                true
+            });
+        });
+        let self_id = self.object_to_owned().instance_id();
+        new_instance.signals().penetrated().connect(move |this, cast_result| {
+            let maybe_self = Gd::<Self>::try_from_instance_id(self_id);
+            let _  = maybe_self.map(|actually_self| {
+                actually_self.signals().penetrated().emit(&this, &cast_result);
+            }).is_err_and(|_| {
+                godot_warn!("Received penetrated signal from a FluoriteCast instance, but the factory that instantiated it is already freed");
                 true
             });
         });

@@ -121,9 +121,9 @@ pub struct FluoriteCast {
     #[var]
     pub custom_data: VarDictionary,
     #[var]
-    query_params_cache_ray: Option<Gd<PhysicsRayQueryParameters3D>>,
+    pub query_params_cache_ray: Option<Gd<PhysicsRayQueryParameters3D>>,
     #[var]
-    query_params_cache_shape: Option<Gd<PhysicsShapeQueryParameters3D>>,
+    pub query_params_cache_shape: Option<Gd<PhysicsShapeQueryParameters3D>>,
 
     /// Meant as an alternative to `custom_data` if you use Rust to use this library, as it is generally faster and more type safe.
     /// 
@@ -869,7 +869,7 @@ impl FluoriteCast {
                     hit_detection_cfg.shape_basis
                     * Basis::looking_at(self.current_velocity),
                     from
-                )); // TODO: Basis::looking_at is a possible placeholder, recheck later
+                )); // TODO: we might want to make a manual version of this, just like how we do it for the payload?
                 let proportions = direct_space.cast_motion(&*query_params);
                 let safe_proportion = proportions.get(0).expect("get(0) should be Some, is hit_shape null?");
                 if safe_proportion >= 1.0 {
