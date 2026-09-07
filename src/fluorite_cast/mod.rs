@@ -197,22 +197,24 @@ impl FluoriteCast {
             },
             GravityBehavior::UseGlobalGravityRealTime => {}, // No-op
             GravityBehavior::UseCurrentGravityRealTime => {
-                // `CollisionShape3D` is only needed for real-time local gravity polling
-                gd_colshape3d.replace(CollisionShape3D::new_alloc());
-                let some_cs3d = gd_colshape3d.as_mut().expect("gd_colshape3d is replaced with Some right above, is the machine out of memory?");
-                some_cs3d.set_name("_FluoriteCastGravityPollingCS3D");
-                some_cs3d.set_shape(
-                    &new_node_bind
-                        .config
-                        .bind()
-                        .cast_general_cfg
-                        .as_ref()
-                        .expect("cast_general_cfg should always be assigned")
-                        .bind()
-                        .shape
-                        .clone()
-                        .expect("shape of cast_general_cfg should always be assigned")
-                );
+                // `CollisionShape3D` is only needed for Area3D interaction, in this case local gravity polling
+                if gd_colshape3d.is_none() {
+                    gd_colshape3d.replace(CollisionShape3D::new_alloc());
+                    let some_cs3d = gd_colshape3d.as_mut().expect("gd_colshape3d is replaced with Some right above, is the machine out of memory?");
+                    some_cs3d.set_name("__FluoriteCastAreaPollingCS3D");
+                    some_cs3d.set_shape(
+                        &new_node_bind
+                            .config
+                            .bind()
+                            .cast_general_cfg
+                            .as_ref()
+                            .expect("cast_general_cfg should always be assigned")
+                            .bind()
+                            .shape
+                            .clone()
+                            .expect("shape of cast_general_cfg should always be assigned")
+                    );
+                }
             },
         }
         match fluid_dynamics_behavior {
@@ -228,8 +230,28 @@ impl FluoriteCast {
                 let computed_const_component = new_node_bind.compute_drag_const_component(global_fluid);
                 new_node_bind.fluid_drag_const_cache.replace(computed_const_component);
             },
-            FluidDynamicsBehavior::UseGlobalFluidRealTime | FluidDynamicsBehavior::UseCurrentFluidRealTime
-                => {}, // No-op
+            FluidDynamicsBehavior::UseGlobalFluidRealTime => {} // no-op 
+            FluidDynamicsBehavior::UseCurrentFluidRealTime => {
+                // `CollisionShape3D` is only needed for Area3D interaction, in this case local fluid polling
+                // TODO: We really ought to implement the Area3D type that exposes local fluid by now
+                if gd_colshape3d.is_none() {
+                    gd_colshape3d.replace(CollisionShape3D::new_alloc());
+                    let some_cs3d = gd_colshape3d.as_mut().expect("gd_colshape3d is replaced with Some right above, is the machine out of memory?");
+                    some_cs3d.set_name("__FluoriteCastAreaPollingCS3D");
+                    some_cs3d.set_shape(
+                        &new_node_bind
+                            .config
+                            .bind()
+                            .cast_general_cfg
+                            .as_ref()
+                            .expect("cast_general_cfg should always be assigned")
+                            .bind()
+                            .shape
+                            .clone()
+                            .expect("shape of cast_general_cfg should always be assigned")
+                    );
+                }
+            },
         }
         let make_exclude_list = |hit_detection_cfg: GdRef<'_, FluoriteCastCfgHitDetection>| -> Array<Rid> {
             let mut arr = array![new_node_bind.base().get_rid()];
