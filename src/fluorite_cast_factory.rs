@@ -122,8 +122,23 @@ impl FluoriteCastFactory {
         new_instance.bind_mut().fire(from, towards);
         new_instance
     }
-
-    fn on_cast_freeing(&mut self, this: Gd<FluoriteCast>) -> () {
+    #[func]
+    pub fn is_tracking_this_cast(&self, &this: Gd<FluoriteCast>) -> bool {
+        self.tracked_instances.contains(&this)
+    }
+    #[func]
+    pub fn get_tracked_casts(&self) -> Array<Option<Gd<FluoriteCast>>> {
+        let mut gdarray = Array::new();
+        let mut tracked_iter = self.tracked_instances.iter();
+        gdarray.resize(tracked_iter.len(), None::<&Gd<FluoriteCast>>); // forced to type annotate a None??
+        // we know the exact size of our array, so we resize the array then set for each index. this should not crash.
+        // unfortunately we have to stupidly use c-like array iteration to do this, and i cannot think of a better way
+        for i in 0..tracked_iter.len() {
+            gdarray.set(i, tracked_iter.next());
+        }
+        gdarray
+    }
+    fn on_cast_freeing(&mut self, &this: Gd<FluoriteCast>) -> () {
         let taken = self.tracked_instances.remove(&this);
         if !taken {
             godot_warn!("Failed to remove node in tracked_instances: {}", this.to_string());

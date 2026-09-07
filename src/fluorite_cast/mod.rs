@@ -698,7 +698,7 @@ impl FluoriteCast {
     }
     #[func]
     /// signature of `with` in Godot should be: `(FluoriteCast) -> void`
-    pub fn mut_config(&self, with: Callable) -> () {
+    pub fn mut_config(&self, &with: Callable) -> () {
         with.call(&[
             self.config.to_variant()
         ]);
