@@ -136,13 +136,13 @@ pub struct FluoriteCast {
 #[godot_api]
 impl FluoriteCast {
     #[signal]
-    fn penetrated(this: Gd<FluoriteCast>, cast_result: Gd<FluoriteSpaceCastResult>);
-
+    pub fn penetrated(this: Gd<FluoriteCast>, cast_result: Gd<FluoriteSpaceCastResult>);
     #[signal]
-    fn terminated(this: Gd<FluoriteCast>, cast_result: Gd<FluoriteSpaceCastResult>);
-
+    pub fn terminated(this: Gd<FluoriteCast>, cast_result: Gd<FluoriteSpaceCastResult>);
     #[signal]
-    fn expired(this: Gd<FluoriteCast>);
+    pub fn expired(this: Gd<FluoriteCast>);
+    #[signal]
+    pub fn freeing(this: Gd<FluoriteCast>);
 
     #[func]
     pub fn new_cast(&mut parent_to: Gd<Node3D>, payload: Option<Gd<Node3D>>, config: Gd<FluoriteCastConfig>, global_fluid: Gd<FluoriteFluidConfig>, custom_data: VarDictionary) -> Gd<Self> {
@@ -673,12 +673,18 @@ impl FluoriteCast {
         if should_free {
             let self_clo = self.object_to_owned();
             self.signals().expired().emit(&self_clo); // I have no idea `emit` wants Gd<_> passed by reference, but `emit_tuple` by value??? But OK.
-            self.cleanup();
+            let should_cleanup = self.config.bind().cast_methods_cfg.as_ref().expect("cast_methods_cfg should always exist").bind().auto_queue_free_on_terminate;
+            if should_cleanup {
+                self.cleanup();
+            }
         }
     }
     #[func]
     pub fn cleanup(&mut self) -> () {
+        if self.is_cleaning_up { return }
         self.is_cleaning_up = true;
+        let self_clo = self.object_to_owned();
+        self.signals().freeing().emit(&self_clo);
         self.base_mut().queue_free();
     }
     #[func]

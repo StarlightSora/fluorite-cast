@@ -486,6 +486,9 @@ pub struct FluoriteCastCfgMethods {
 
     #[export]
     #[init(val = true)]
+    /// If this is false, you need to call `cleanup` on the instance manually when `expired` or `terminated` fires.
+    /// 
+    /// Do not use `queue_free` directly, unless you need to bypass firing the `cleaning_up` signal.
     pub auto_queue_free_on_terminate: bool,
 }
 #[godot_api]
