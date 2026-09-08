@@ -11,11 +11,17 @@ pub mod builtins;
 
 use godot::{
     classes::{
-        CollisionShape3D, IStaticBody3D, PhysicsPointQueryParameters3D, PhysicsRayQueryParameters3D, PhysicsShapeQueryParameters3D, ProjectSettings, SphereShape3D, StaticBody3D,
+        Area3D,
+        PhysicsPointQueryParameters3D,
+        PhysicsRayQueryParameters3D,
+        PhysicsShapeQueryParameters3D,
+        ProjectSettings,
+        area_3d::SpaceOverride,
     }, global::{
         ceilf,
         push_warning
-    }, meta::conv::ObjectToOwned, prelude::*,
+    }, meta::conv::ObjectToOwned,
+    prelude::*,
 };
 use hashbrown::HashMap;
 use core::cmp::max;
@@ -90,9 +96,9 @@ impl FluoriteSpaceCastResult {
 }
 
 #[derive(GodotClass)]
-#[class(init, base=StaticBody3D)]
+#[class(init, base=Node3D)]
 pub struct FluoriteCast {
-    base: Base<StaticBody3D>,
+    base: Base<Node3D>,
     gravity_cache: Option<Vector3>,
     ambient_airspeed_cache: Option<Vector3>,
     speed_of_sound_cache: Option<f64>,
@@ -173,7 +179,7 @@ impl FluoriteCast {
             }
         });
         // The base needs to be `StaticBody3D`, and a `CollisionShape3D` is needed so we can use `get_gravity` for `UseCurrentGravityRealTime` mode
-        let mut gd_colshape3d = None;
+        //let mut gd_colshape3d = None;
 
         let mut new_node_bind = new_node.bind_mut();
         let cfg_binding = new_node_bind.config.bind();
@@ -197,11 +203,7 @@ impl FluoriteCast {
                 new_node_bind.gravity_cache.replace(Vector3::ZERO);
             },
             GravityBehavior::UseGlobalGravityCached => {
-                let project_settings = ProjectSettings::singleton();
-                let res = project_settings.get_setting("physics/3d/default_gravity_vector").try_to::<Vector3>().expect("default_gravity_vector should be Vector3")
-                    * (project_settings.get_setting("physics/3d/default_gravity").try_to::<f64>().expect("default_gravity should be f64") as f32)
-                    * (gravity_multiplier as f32)
-                ;
+                let res = new_node_bind.get_global_gravity() * (gravity_multiplier as f32);
                 new_node_bind.gravity_cache.replace(res);
             },
             GravityBehavior::UseGlobalGravityRealTime => {}, // No-op
@@ -232,24 +234,24 @@ impl FluoriteCast {
                 some_new.set_collision_mask(collision_mask_data);
                 some_new.set_shape(&*collision_shape_data.as_ref().expect("collision_shape_data is checked above to be Some"));
                 new_node_bind.area_test_cache_shape.replace(some_new);
-                let mut new_cs3d = CollisionShape3D::new_alloc().to_godot_owned();
-                new_cs3d.set_shape(&collision_shape_data.expect("collision_shape_data is checked above to be Some"));
-                gd_colshape3d.replace(new_cs3d);
+                // let mut new_cs3d = CollisionShape3D::new_alloc().to_godot_owned();
+                // new_cs3d.set_shape(&collision_shape_data.expect("collision_shape_data is checked above to be Some"));
+                // gd_colshape3d.replace(new_cs3d);
             } else {
                 let mut some_new = PhysicsPointQueryParameters3D::new_gd();
                 some_new.set_collide_with_areas(true);
                 some_new.set_collide_with_bodies(false);
                 some_new.set_collision_mask(collision_mask_data);
                 new_node_bind.area_test_cache_point.replace(some_new);
-                let mut new_cs3d = CollisionShape3D::new_alloc().to_godot_owned();
-                let mut ad_hoc = SphereShape3D::new_gd(); // this stupidly makes a new unique instance every time, is there a better way??
-                ad_hoc.set_radius(0.0001);
-                new_cs3d.set_shape(&ad_hoc);
-                gd_colshape3d.replace(new_cs3d);
+                // let mut new_cs3d = CollisionShape3D::new_alloc().to_godot_owned();
+                // let mut ad_hoc = SphereShape3D::new_gd(); // this stupidly makes a new unique instance every time, is there a better way??
+                // ad_hoc.set_radius(0.0001);
+                // new_cs3d.set_shape(&ad_hoc);
+                // gd_colshape3d.replace(new_cs3d);
             }
         }
         let make_exclude_list = |hit_detection_cfg: GdRef<'_, FluoriteCastCfgHitDetection>| -> Array<Rid> {
-            let mut arr = array![];
+            let mut arr = array![];//[new_node_bind.base().get_rid()];
             hit_detection_cfg.exclude_list_paths_shallow
                 .iter_shared()
                 .for_each(|pth| {
@@ -328,13 +330,14 @@ impl FluoriteCast {
         new_node_bind.assign_payload(payload);
         drop(new_node_bind);
 
-        // FIXME: This causes a regression where Area3Ds cannot apply gravity on it?
-        new_node.set_collision_mask(collision_mask_data);
-        new_node.set_collision_layer(0b0); // we only need to get affected by `Area3D`s for real-time local gravity polling, so disable collision layer entirely
+        // This causes a regression where Area3Ds cannot apply gravity on it, so it was reworked
+        // If we set set_collision_layer to collision_mask_data, it will interact with physics objects in the world, which is undersirable
+        // new_node.set_collision_mask(collision_mask_data);
+        // new_node.set_collision_layer(0); // we only need to get affected by `Area3D`s for real-time local gravity polling, so disable collision layer entirely
         
-        if let Some(some_gd_cs3) = gd_colshape3d {
-            new_node.add_child(&some_gd_cs3);
-        }
+        // if let Some(some_gd_cs3) = gd_colshape3d {
+        //     new_node.add_child(&some_gd_cs3);
+        // }
 
         parent_to.add_child(&new_node);
 
@@ -526,15 +529,13 @@ impl FluoriteCast {
                     drop(binding);
                     match gravity_behavior {
                         GravityBehavior::UseGlobalGravityRealTime => {
-                            let project_settings = ProjectSettings::singleton();
-                            let res = project_settings.get_setting("physics/3d/default_gravity_vector").try_to::<Vector3>().expect("default_gravity_vector should be Vector3")
-                                * (project_settings.get_setting("physics/3d/default_gravity").try_to::<f64>().expect("default_gravity should be f64") as f32)
-                                * (gravity_multiplier as f32)
+                            let res = self.get_global_gravity() * (gravity_multiplier as f32)
                             ;
                             self.current_velocity += (res + self.current_acceleration)*(delta as f32);
                         },
                         GravityBehavior::UseCurrentGravityRealTime => {
-                            let grav = self.base().get_gravity(); // FIXME: REGRESSION: This doesn't work!
+                            let grav = self.get_current_gravity();
+                            // let grav = self.base().get_gravity(); // This doesn't work! We need a custom gravity calculator!
                             self.current_velocity += ((grav*(gravity_multiplier as f32)) + self.current_acceleration)*(delta as f32);
                         },
                         _ => { panic!("gravity_cache should exist for cached modes") }
@@ -585,7 +586,7 @@ impl FluoriteCast {
         }
         let vel = self.current_velocity;
         let base = self.base();
-        let starting_pos = base.get_position();
+        let starting_pos = base.get_global_position();
         drop(base);
         let dist = match override_dist {
             true => { overridden_dist_v3 },
@@ -973,26 +974,31 @@ impl FluoriteCast {
         }
     }
     #[func]
-    pub fn get_current_fluid_config(&mut self) -> Gd<FluoriteFluidConfig> {
+    pub fn scan_overlapping_area3ds(&mut self, max_results: i32) -> Array<VarDictionary> {
         let mut direct_space = self.base().get_world_3d().expect("world_3d should exist").get_direct_space_state().expect("direct_space_state should exist");
         let result;
         if self.area_test_cache_shape.is_some() {
             let area_collision_basis = self.config.bind().cast_general_cfg.as_ref().expect("cast_general_cfg should always exist").bind().area_collision_basis;
             let looking_at = Basis::looking_at(self.current_velocity);
-            let base_pos = self.base().get_position();
+            let base_pos = self.base().get_global_position();
             let cache_shape_binding = self.area_test_cache_shape.as_mut().expect("area_test_cache_shape is checked above");
             cache_shape_binding.set_transform(Transform3D::new(
                 area_collision_basis
-                * looking_at,
+                * looking_at, // TODO: we might want to make a manual version of this, just like how we do it for the payload?
                 base_pos
-            )); // TODO: we might want to make a manual version of this, just like how we do it for the payload?
-            result = direct_space.intersect_shape_ex(&*cache_shape_binding).max_results(8).done();
+            ));
+            result = direct_space.intersect_shape_ex(&*cache_shape_binding).max_results(max_results).done();
         } else {
-            let base_pos = self.base().get_position();
+            let base_pos = self.base().get_global_position();
             let cache_point_binding = self.area_test_cache_point.as_mut().expect("area_test_cache_point should exist if area_test_cache_shape does not");
             cache_point_binding.set_position(base_pos);
-            result = direct_space.intersect_point_ex(&*cache_point_binding).max_results(8).done();
+            result = direct_space.intersect_point_ex(&*cache_point_binding).max_results(max_results).done();
         }
+        result
+    }
+    #[func]
+    pub fn get_current_fluid_config(&mut self) -> Gd<FluoriteFluidConfig> {
+        let result = self.scan_overlapping_area3ds(8);
         let mut fluid_area3ds = Vec::new();
         for entry in result.iter_shared() {
             if
@@ -1002,24 +1008,88 @@ impl FluoriteCast {
                 fluid_area3ds.push(collider);
             }
         }
-
         fluid_area3ds.sort_unstable_by(|a, b| {
-            a.bind().override_priority.cmp(&b.bind().override_priority).reverse()
+            a.bind().fluid_override_priority.cmp(&b.bind().fluid_override_priority).reverse()
         });
         fluid_area3ds.iter().next().map_or_else(|| {
             self.get_global_fluid_config()
         }, |area| {
-            area.bind().override_config.clone().expect("override_config should always exist on a FluoriteFluidArea3D")
+            area.bind().fluid_override_config.clone().expect("fluid_override_config should always exist on a FluoriteFluidArea3D")
         })
     }
     #[func]
     pub fn get_global_fluid_config(&self) -> Gd<FluoriteFluidConfig> {
         self.global_fluid.clone().expect("Should always exist")
     }
+    #[func]
+    pub fn get_current_gravity(&mut self) -> Vector3 {
+        let result = self.scan_overlapping_area3ds(8);
+        let mut gravity_area3ds = Vec::new();
+        for entry in result.iter_shared() {
+            if
+                let Some(collider_variant) = entry.get("collider")
+                && let Ok(collider) = collider_variant.try_to::<Gd<Area3D>>()
+                && collider.get_gravity_space_override_mode() != SpaceOverride::DISABLED
+            {
+                gravity_area3ds.push(collider);
+            }
+        }
+        gravity_area3ds.sort_unstable_by(|a, b| {
+            a.get_priority().cmp(&b.get_priority()).reverse()
+        });
+        let mut gravity = self.get_global_gravity();
+        for area in gravity_area3ds.iter() {
+            let this_gravity;
+            if area.is_gravity_a_point() {
+                let this_pos = self.base().get_global_position();
+                let grav_center = (area.get_transform() * Transform3D::new(Basis::IDENTITY, area.get_gravity_point_center())).origin;
+                let diff = this_pos - grav_center;
+                let diff_len = diff.length();
+                let diff_norm = diff.normalized_or_zero();
+                let mut directional_grav = -diff_norm;
+                let point_unit_dist = area.get_gravity_point_unit_distance();
+                if point_unit_dist > 0.0 {
+                    let lin_ratio = diff_len / point_unit_dist;
+                    let inv_sq_ratio = 1.0 / (lin_ratio*lin_ratio);
+                    directional_grav *= inv_sq_ratio;
+                }
+                this_gravity = area.get_gravity() * directional_grav;
+            } else {
+                this_gravity = area.get_gravity() * area.get_gravity_direction();
+            }
+
+            match area.get_gravity_space_override_mode() {
+                SpaceOverride::DISABLED => unreachable!("SpaceOverride::DISABLED Area3Ds should get discarded above!"),
+                SpaceOverride::COMBINE => {
+                    gravity += this_gravity;
+                },
+                SpaceOverride::COMBINE_REPLACE => {
+                    gravity += this_gravity;
+                    break;
+                },
+                SpaceOverride::REPLACE => {
+                    gravity = this_gravity;
+                    break;
+                },
+                SpaceOverride::REPLACE_COMBINE => {
+                    gravity = this_gravity;
+                },
+                _ => unreachable!("Invalid SpaceOverride flag in Area3D!"),
+            }
+        }
+        gravity
+    }
+    #[func]
+    pub fn get_global_gravity(&self) -> Vector3 {
+        let project_settings = ProjectSettings::singleton();
+        project_settings.get_setting("physics/3d/default_gravity_vector").try_to::<Vector3>().expect("default_gravity_vector should be Vector3")
+            * (project_settings.get_setting("physics/3d/default_gravity").try_to::<f64>().expect("default_gravity should be f64") as f32)
+        
+    }
 }
 
 #[godot_api]
-impl IStaticBody3D for FluoriteCast {
+impl INode3D for FluoriteCast {
     fn process(&mut self, delta: f64) {
         let mut can_do = false; // The stupid crap borrowck forces me to do
         if let EvaluateMode::Process = self.config.bind().evaluate_mode {

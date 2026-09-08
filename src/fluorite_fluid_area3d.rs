@@ -8,7 +8,7 @@ pub struct FluoriteFluidArea3D {
     base: Base<Area3D>,
     #[export]
     #[init(val = 0)]
-    pub override_priority: i64,
+    pub fluid_override_priority: i64,
     #[export]
-    pub override_config: Option<Gd<FluoriteFluidConfig>>,
+    pub fluid_override_config: Option<Gd<FluoriteFluidConfig>>,
 }
