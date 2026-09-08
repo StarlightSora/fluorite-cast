@@ -11,24 +11,17 @@ pub mod builtins;
 
 use godot::{
     classes::{
-        CollisionShape3D, 
-        IStaticBody3D, 
-        PhysicsRayQueryParameters3D, 
-        PhysicsShapeQueryParameters3D, 
-        ProjectSettings, 
-        StaticBody3D,
-    },
-    global::{
+        CollisionShape3D, IStaticBody3D, PhysicsPointQueryParameters3D, PhysicsRayQueryParameters3D, PhysicsShapeQueryParameters3D, ProjectSettings, SphereShape3D, StaticBody3D,
+    }, global::{
         ceilf,
         push_warning
-    },
-    meta::conv::ObjectToOwned,
-    prelude::*,
+    }, meta::conv::ObjectToOwned, prelude::*,
 };
 use hashbrown::HashMap;
 use core::cmp::max;
 use core::any::Any;
 
+use super::fluorite_fluid_area3d::FluoriteFluidArea3D;
 use super::fluorite_fluid_config::FluoriteFluidConfig;
 use super::fluorite_cast_config::{
     FluoriteCastConfig,
@@ -124,6 +117,10 @@ pub struct FluoriteCast {
     pub query_params_cache_ray: Option<Gd<PhysicsRayQueryParameters3D>>,
     #[var]
     pub query_params_cache_shape: Option<Gd<PhysicsShapeQueryParameters3D>>,
+    #[var]
+    pub area_test_cache_point: Option<Gd<PhysicsPointQueryParameters3D>>,
+    #[var]
+    pub area_test_cache_shape: Option<Gd<PhysicsShapeQueryParameters3D>>,
 
     /// Meant as an alternative to `custom_data` if you use Rust to use this library, as it is generally faster and more type safe.
     /// 
@@ -170,6 +167,8 @@ impl FluoriteCast {
                 is_cleaning_up: false,
                 query_params_cache_ray: None,
                 query_params_cache_shape: None,
+                area_test_cache_point: None,
+                area_test_cache_shape: None,
                 custom_data_rs: None,
             }
         });
@@ -178,12 +177,19 @@ impl FluoriteCast {
 
         let mut new_node_bind = new_node.bind_mut();
         let cfg_binding = new_node_bind.config.bind();
-        let collision_mask_data = cfg_binding.cast_general_cfg.as_ref().expect("cast_general_cfg").bind().area_collision_mask;
-        let gravity_behavior = cfg_binding.cast_gravity_cfg.as_ref().expect("cast_gravity_cfg should always exist").bind().gravity_behavior;
+        let mut area3d_test_needed = false;
+        let cast_general_cfg_binding = cfg_binding.cast_general_cfg.as_ref().expect("cast_general_cfg should always exist").bind();
+        let collision_shape_data = cast_general_cfg_binding.area_collision_shape.clone();
+        let collision_mask_data = cast_general_cfg_binding.area_collision_mask;
+        let cast_gravity_cfg_binding = cfg_binding.cast_gravity_cfg.as_ref().expect("cast_gravity_cfg should always exist").bind();
+        let gravity_behavior = cast_gravity_cfg_binding.gravity_behavior;
+        let gravity_multiplier = cast_gravity_cfg_binding.gravity_multiplier;
         let fluid_dynamics_behavior = cfg_binding.cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().fluid_dynamics_behavior;
         let hit_detection_cfg_bind = cfg_binding.cast_hit_detection_cfg.as_ref().expect("cast_hit_detection_cfg should always exist").bind();
         let collision_detection_mode = hit_detection_cfg_bind.collision_detection_mode;
         let suppress_invalid_path_warnings = hit_detection_cfg_bind.suppress_invalid_path_warnings;
+        drop(cast_gravity_cfg_binding);
+        drop(cast_general_cfg_binding);
         drop(hit_detection_cfg_bind);
         drop(cfg_binding);
         match gravity_behavior {
@@ -191,31 +197,15 @@ impl FluoriteCast {
                 new_node_bind.gravity_cache.replace(Vector3::ZERO);
             },
             GravityBehavior::UseGlobalGravityCached => {
-                let res = ProjectSettings::singleton().get_setting("physics/3d/default_gravity_vector").try_to::<Vector3>().expect("default_gravity_vector should be Vector3")
-                    * (ProjectSettings::singleton().get_setting("physics/3d/default_gravity").try_to::<f64>().expect("default_gravity should be f64") as f32);
+                let project_settings = ProjectSettings::singleton();
+                let res = project_settings.get_setting("physics/3d/default_gravity_vector").try_to::<Vector3>().expect("default_gravity_vector should be Vector3")
+                    * (project_settings.get_setting("physics/3d/default_gravity").try_to::<f64>().expect("default_gravity should be f64") as f32)
+                    * (gravity_multiplier as f32)
+                ;
                 new_node_bind.gravity_cache.replace(res);
             },
             GravityBehavior::UseGlobalGravityRealTime => {}, // No-op
-            GravityBehavior::UseCurrentGravityRealTime => {
-                // `CollisionShape3D` is only needed for Area3D interaction, in this case local gravity polling
-                if gd_colshape3d.is_none() {
-                    gd_colshape3d.replace(CollisionShape3D::new_alloc());
-                    let some_cs3d = gd_colshape3d.as_mut().expect("gd_colshape3d is replaced with Some right above, is the machine out of memory?");
-                    some_cs3d.set_name("__FluoriteCastAreaPollingCS3D");
-                    some_cs3d.set_shape(
-                        &new_node_bind
-                            .config
-                            .bind()
-                            .cast_general_cfg
-                            .as_ref()
-                            .expect("cast_general_cfg should always be assigned")
-                            .bind()
-                            .shape
-                            .clone()
-                            .expect("shape of cast_general_cfg should always be assigned")
-                    );
-                }
-            },
+            GravityBehavior::UseCurrentGravityRealTime => { area3d_test_needed = true },
         }
         match fluid_dynamics_behavior {
             FluidDynamicsBehavior::Ignore => {
@@ -230,31 +220,36 @@ impl FluoriteCast {
                 let computed_const_component = new_node_bind.compute_drag_const_component(global_fluid);
                 new_node_bind.fluid_drag_const_cache.replace(computed_const_component);
             },
-            FluidDynamicsBehavior::UseGlobalFluidRealTime => {} // no-op 
-            FluidDynamicsBehavior::UseCurrentFluidRealTime => {
-                // `CollisionShape3D` is only needed for Area3D interaction, in this case local fluid polling
-                // TODO: We really ought to implement the Area3D type that exposes local fluid by now
-                if gd_colshape3d.is_none() {
-                    gd_colshape3d.replace(CollisionShape3D::new_alloc());
-                    let some_cs3d = gd_colshape3d.as_mut().expect("gd_colshape3d is replaced with Some right above, is the machine out of memory?");
-                    some_cs3d.set_name("__FluoriteCastAreaPollingCS3D");
-                    some_cs3d.set_shape(
-                        &new_node_bind
-                            .config
-                            .bind()
-                            .cast_general_cfg
-                            .as_ref()
-                            .expect("cast_general_cfg should always be assigned")
-                            .bind()
-                            .shape
-                            .clone()
-                            .expect("shape of cast_general_cfg should always be assigned")
-                    );
-                }
-            },
+            FluidDynamicsBehavior::UseGlobalFluidRealTime => {} // No-op 
+            FluidDynamicsBehavior::UseCurrentFluidRealTime => { area3d_test_needed = true },
+        }
+        if area3d_test_needed {
+            // A map_or_else is more idiomatic, but that creates a double mutable borrow to new_node_bind, which I do not want to deal with
+            if collision_shape_data.is_some() {
+                let mut some_new = PhysicsShapeQueryParameters3D::new_gd();
+                some_new.set_collide_with_areas(true);
+                some_new.set_collide_with_bodies(false);
+                some_new.set_collision_mask(collision_mask_data);
+                some_new.set_shape(&*collision_shape_data.as_ref().expect("collision_shape_data is checked above to be Some"));
+                new_node_bind.area_test_cache_shape.replace(some_new);
+                let mut new_cs3d = CollisionShape3D::new_alloc().to_godot_owned();
+                new_cs3d.set_shape(&collision_shape_data.expect("collision_shape_data is checked above to be Some"));
+                gd_colshape3d.replace(new_cs3d);
+            } else {
+                let mut some_new = PhysicsPointQueryParameters3D::new_gd();
+                some_new.set_collide_with_areas(true);
+                some_new.set_collide_with_bodies(false);
+                some_new.set_collision_mask(collision_mask_data);
+                new_node_bind.area_test_cache_point.replace(some_new);
+                let mut new_cs3d = CollisionShape3D::new_alloc().to_godot_owned();
+                let mut ad_hoc = SphereShape3D::new_gd(); // this stupidly makes a new unique instance every time, is there a better way??
+                ad_hoc.set_radius(0.0001);
+                new_cs3d.set_shape(&ad_hoc);
+                gd_colshape3d.replace(new_cs3d);
+            }
         }
         let make_exclude_list = |hit_detection_cfg: GdRef<'_, FluoriteCastCfgHitDetection>| -> Array<Rid> {
-            let mut arr = array![new_node_bind.base().get_rid()];
+            let mut arr = array![];
             hit_detection_cfg.exclude_list_paths_shallow
                 .iter_shared()
                 .for_each(|pth| {
@@ -333,8 +328,10 @@ impl FluoriteCast {
         new_node_bind.assign_payload(payload);
         drop(new_node_bind);
 
+        // FIXME: This causes a regression where Area3Ds cannot apply gravity on it?
         new_node.set_collision_mask(collision_mask_data);
         new_node.set_collision_layer(0b0); // we only need to get affected by `Area3D`s for real-time local gravity polling, so disable collision layer entirely
+        
         if let Some(some_gd_cs3) = gd_colshape3d {
             new_node.add_child(&some_gd_cs3);
         }
@@ -528,9 +525,17 @@ impl FluoriteCast {
                     drop(grav_cfg);
                     drop(binding);
                     match gravity_behavior {
-                        GravityBehavior::UseGlobalGravityRealTime | GravityBehavior::UseCurrentGravityRealTime => {
-                            // `get_gravity` returns global gravity if `CollisionShape3D` is missing
-                            self.current_velocity += ((self.base().get_gravity()*(gravity_multiplier as f32)) + self.current_acceleration)*(delta as f32);
+                        GravityBehavior::UseGlobalGravityRealTime => {
+                            let project_settings = ProjectSettings::singleton();
+                            let res = project_settings.get_setting("physics/3d/default_gravity_vector").try_to::<Vector3>().expect("default_gravity_vector should be Vector3")
+                                * (project_settings.get_setting("physics/3d/default_gravity").try_to::<f64>().expect("default_gravity should be f64") as f32)
+                                * (gravity_multiplier as f32)
+                            ;
+                            self.current_velocity += (res + self.current_acceleration)*(delta as f32);
+                        },
+                        GravityBehavior::UseCurrentGravityRealTime => {
+                            let grav = self.base().get_gravity(); // FIXME: REGRESSION: This doesn't work!
+                            self.current_velocity += ((grav*(gravity_multiplier as f32)) + self.current_acceleration)*(delta as f32);
                         },
                         _ => { panic!("gravity_cache should exist for cached modes") }
                     }
@@ -567,12 +572,14 @@ impl FluoriteCast {
                 FluidDynamicsFidelity::DragCoefficient => {
                     self.current_velocity += ambient_airspeed*(delta as f32);
                     let external_airspeed = self.current_velocity - ambient_airspeed;
-                    self.current_velocity += self.compute_drag_ideal(external_airspeed.length() as f64, external_airspeed.normalized())*(delta as f32);
+                    let drag = self.compute_drag_ideal(external_airspeed.length() as f64, external_airspeed.normalized())*(delta as f32);
+                    self.current_velocity += drag;
                 },
                 FluidDynamicsFidelity::DragCoefficientAndMach => {
                     self.current_velocity += ambient_airspeed*(delta as f32);
                     let external_airspeed = self.current_velocity - ambient_airspeed;
-                    self.current_velocity += self.compute_drag_full_approx(external_airspeed.length() as f64, external_airspeed.normalized())*(delta as f32);
+                    let drag = self.compute_drag_full_approx(external_airspeed.length() as f64, external_airspeed.normalized())*(delta as f32);
+                    self.current_velocity += drag
                 },
             }
         }
@@ -726,7 +733,7 @@ impl FluoriteCast {
         ]);
     }
     #[func]
-    pub fn compute_drag_full_approx(&self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
+    pub fn compute_drag_full_approx(&mut self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
         // The general idea is as follows:
         // drag = -0.5 * gas_density * ref_area * airspeed^2 * drag_coefficient * airspeed_unit_vector
         // where drag_coefficient = too_complicated_to_compute_for_this_library_so_const * some_curve.map_to(airspeed / speed_of_sound)
@@ -738,7 +745,7 @@ impl FluoriteCast {
         self.compute_drag_ideal(airspeed, airspeed_unit_vector) * (self.compute_drag_dyn_component_mach(airspeed) as f32)
     } 
     #[func]
-    pub fn compute_drag_ideal(&self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
+    pub fn compute_drag_ideal(&mut self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
         self.get_drag_const_component() as f32 * self.compute_drag_dyn_component_airspeed(airspeed, airspeed_unit_vector)
     } 
     #[func]
@@ -755,15 +762,17 @@ impl FluoriteCast {
         (airspeed * airspeed) as f32 * airspeed_unit_vector
     }
     #[func]
-    pub fn compute_drag_dyn_component_mach(&self, airspeed: f64) -> f64 {
-        if let Some(curve) = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().mach_based_drag_multiplier.as_ref() {
-            curve.sample(self.get_mach_number(airspeed) as f32) as f64
+    pub fn compute_drag_dyn_component_mach(&mut self, airspeed: f64) -> f64 {
+        let maybe_curve = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().mach_based_drag_multiplier.clone();
+        if let Some(curve) = maybe_curve {
+            let mach_number = self.get_mach_number(airspeed) as f32;
+            curve.sample(mach_number) as f64
         } else {
             1.0
         }
     }
     #[func]
-    pub fn get_mach_number(&self, airspeed: f64) -> f64 {
+    pub fn get_mach_number(&mut self, airspeed: f64) -> f64 {
         airspeed / self.speed_of_sound_cache.unwrap_or_else(|| {
             let fluid_dynamics_behavior = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().fluid_dynamics_behavior;
             match fluid_dynamics_behavior {
@@ -780,15 +789,17 @@ impl FluoriteCast {
         })
     }
     #[func]
-    pub fn get_drag_const_component(&self) -> f64 {
+    pub fn get_drag_const_component(&mut self) -> f64 {
         self.fluid_drag_const_cache.unwrap_or_else(|| {
             let fluid_dynamics_behavior = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().fluid_dynamics_behavior;
             match fluid_dynamics_behavior {
                 FluidDynamicsBehavior::UseGlobalFluidRealTime => {
-                    self.compute_drag_const_component(self.get_global_fluid_config())
+                    let fluid = self.get_global_fluid_config();
+                    self.compute_drag_const_component(fluid)
                 },
                 FluidDynamicsBehavior::UseCurrentFluidRealTime => {
-                    self.compute_drag_const_component(self.get_current_fluid_config())
+                    let fluid = self.get_current_fluid_config();
+                    self.compute_drag_const_component(fluid)
                 },
                 _ => {
                     panic!("fluid_dynamics_behavior was not *RealTime while fluid_drag_const_cache was None!")
@@ -885,7 +896,7 @@ impl FluoriteCast {
             CollisionDetectionMode::ByShapecast => {
                 let mut direct_space = self.base().get_world_3d().expect("world_3d should exist").get_direct_space_state().expect("direct_space_state should exist");
                 let query_params = self.query_params_cache_shape.as_mut().expect("query_params_cache_shape should exist in ByShapecast mode");
-                let diff_v3 = to - from;
+                let diff_v3 = to - from;    
                 query_params.set_motion(diff_v3);
                 query_params.set_transform(Transform3D::new(
                     hit_detection_cfg.shape_basis
@@ -962,8 +973,44 @@ impl FluoriteCast {
         }
     }
     #[func]
-    pub fn get_current_fluid_config(&self) -> Gd<FluoriteFluidConfig> {
-        self.get_global_fluid_config()
+    pub fn get_current_fluid_config(&mut self) -> Gd<FluoriteFluidConfig> {
+        let mut direct_space = self.base().get_world_3d().expect("world_3d should exist").get_direct_space_state().expect("direct_space_state should exist");
+        let result;
+        if self.area_test_cache_shape.is_some() {
+            let area_collision_basis = self.config.bind().cast_general_cfg.as_ref().expect("cast_general_cfg should always exist").bind().area_collision_basis;
+            let looking_at = Basis::looking_at(self.current_velocity);
+            let base_pos = self.base().get_position();
+            let cache_shape_binding = self.area_test_cache_shape.as_mut().expect("area_test_cache_shape is checked above");
+            cache_shape_binding.set_transform(Transform3D::new(
+                area_collision_basis
+                * looking_at,
+                base_pos
+            )); // TODO: we might want to make a manual version of this, just like how we do it for the payload?
+            result = direct_space.intersect_shape_ex(&*cache_shape_binding).max_results(8).done();
+        } else {
+            let base_pos = self.base().get_position();
+            let cache_point_binding = self.area_test_cache_point.as_mut().expect("area_test_cache_point should exist if area_test_cache_shape does not");
+            cache_point_binding.set_position(base_pos);
+            result = direct_space.intersect_point_ex(&*cache_point_binding).max_results(8).done();
+        }
+        let mut fluid_area3ds = Vec::new();
+        for entry in result.iter_shared() {
+            if
+                let Some(collider_variant) = entry.get("collider")
+                && let Ok(collider) = collider_variant.try_to::<Gd<FluoriteFluidArea3D>>()
+            {
+                fluid_area3ds.push(collider);
+            }
+        }
+
+        fluid_area3ds.sort_unstable_by(|a, b| {
+            a.bind().override_priority.cmp(&b.bind().override_priority).reverse()
+        });
+        fluid_area3ds.iter().next().map_or_else(|| {
+            self.get_global_fluid_config()
+        }, |area| {
+            area.bind().override_config.clone().expect("override_config should always exist on a FluoriteFluidArea3D")
+        })
     }
     #[func]
     pub fn get_global_fluid_config(&self) -> Gd<FluoriteFluidConfig> {

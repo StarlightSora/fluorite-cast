@@ -1,4 +1,4 @@
-use godot::{classes::{Curve, Shape3D, SphereShape3D}, prelude::*};
+use godot::{classes::{Curve, Shape3D}, prelude::*};
 
 use super::fluorite_cast::{FluoriteCast, FluoriteSpaceCastResult};
 
@@ -49,8 +49,8 @@ pub enum FluidDynamicsBehavior {
     UseGlobalFluidCached,
     /// Query global fluid every operation
     UseGlobalFluidRealTime,
-    /// Query current fluid every operation (WIP, functions as UseGlobalFluidRealTime at the moment)
-    UseCurrentFluidRealTime, // TODO: Make custom Area3Ds that can override the global fluid for this to work
+    /// Query current fluid every operation
+    UseCurrentFluidRealTime,
 }
 
 #[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
@@ -568,7 +568,13 @@ impl FluoriteCastCfgMethods {
 pub struct FluoriteCastCfgGeneral {
     base: Base<Resource>,
     #[export]
-    pub shape: Option<Gd<Shape3D>>,
+    /// This field is nullable. If it's None (null),
+    /// then a pointcast will be done instead of a shapecast
+    /// to test for Area3Ds.
+    pub area_collision_shape: Option<Gd<Shape3D>>,
+    #[export]
+    /// Only used when area_collision_shape is Some.
+    pub area_collision_basis: Basis,
     #[export(flags_3d_physics)]
     #[init(val = u32::MAX)]
     pub area_collision_mask: u32,
@@ -586,8 +592,9 @@ pub struct FluoriteCastCfgGeneral {
 impl FluoriteCastCfgGeneral {
     #[func]
     pub fn new_config(
-        shape: Gd<Shape3D>,
         projectile_look_behavior: ProjectileLookBehavior,
+        area_collision_shape: Option<Gd<Shape3D>>,
+        area_collision_basis: Basis,
         area_collision_mask: u32,
         max_alive_time: f64,
         max_total_length: f64
@@ -595,8 +602,9 @@ impl FluoriteCastCfgGeneral {
         Gd::from_init_fn(|base| {
             Self {
                 base,
-                shape: Some(shape),
+                area_collision_shape,
                 area_collision_mask,
+                area_collision_basis,
                 max_alive_time,
                 max_total_length,
                 projectile_look_behavior,
@@ -606,12 +614,11 @@ impl FluoriteCastCfgGeneral {
     #[func]
     pub fn new_default() -> Gd<Self> {
         Gd::from_init_fn(|base| {
-            let mut some_sphere = SphereShape3D::new_gd();
-            some_sphere.set_radius(0.001);
             Self {
                 base,
-                shape: Some(some_sphere.upcast()),
+                area_collision_shape: None,
                 area_collision_mask: u32::MAX,
+                area_collision_basis: Basis::IDENTITY,
                 max_alive_time: 15.0,
                 max_total_length: 2000.0,
                 projectile_look_behavior: ProjectileLookBehavior::default(),

@@ -16,3 +16,4 @@ pub mod fluorite_fluid_config;
 pub mod fluorite_cast_factory;
 pub mod fluorite_cast_config;
 pub mod fluorite_cast;
+pub mod fluorite_fluid_area3d;
