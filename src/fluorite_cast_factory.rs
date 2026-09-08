@@ -5,16 +5,30 @@ use crate::prelude::*;
 
 #[derive(GodotClass)]
 #[class(init, base=Node3D)]
+/// A factory type that instantiates and keeps track of `FluoriteCast`s.
 pub struct FluoriteCastFactory {
     base: Base<Node3D>,
     tracked_instances: HashSet<Gd<FluoriteCast>>,
     #[export]
+    /// All instantiated casts will be parented to this node.
+    /// 
+    /// **This field must always be `Some`** (non-`null`).
+    /// If this invariant is broken, the cast will panic.
     pub parent_to: Option<Gd<Node3D>>,
     #[export]
+    /// The scene to instantiate a payload from for every cast, if any.
     pub payload_scene: Option<Gd<PackedScene>>,
     #[export]
+    /// The config given to instantiated casts.
+    ///
+    /// **This field must always be `Some`** (non-`null`).
+    /// If this invariant is broken, the cast will panic.
     pub projectile_config: Option<Gd<FluoriteCastConfig>>,
     #[export]
+    /// The global fluid forwarded to instantiated casts.
+    ///
+    /// **This field must always be `Some`** (non-`null`).
+    /// If this invariant is broken, the cast will panic.
     pub global_fluid: Option<Gd<FluoriteFluidConfig>>,
 }
 
@@ -23,13 +37,18 @@ impl FluoriteCastFactory {
     //#[signal]
     //pub fn freeing(this: Gd<FluoriteCast>);
     #[signal]
+    /// Fired when an instantiated cast expires.
     pub fn expired(this: Gd<FluoriteCast>);
     #[signal]
+    /// Fired when an instantiated cast terminates.
     pub fn terminated(this: Gd<FluoriteCast>, cast_result: Gd<FluoriteSpaceCastResult>);
     #[signal]
+    /// Fired when an instantiated cast penetrates.
     pub fn penetrated(this: Gd<FluoriteCast>, cast_result: Gd<FluoriteSpaceCastResult>);
 
     #[func]
+    /// Constructs a new `FluoriteCastFactory`.
+    /// Always use this instead of `FluoriteCastFactory.new()`.
     pub fn new_factory(
         parent_to: Gd<Node3D>,
         payload_scene: Option<Gd<PackedScene>>,
@@ -49,6 +68,14 @@ impl FluoriteCastFactory {
         })
     }
     #[func]
+    /// Instantiate a cast and fire it.
+    /// 
+    /// If `config_override` is provided, the cast will use that config
+    /// instead of the config stored in the factory.
+    /// 
+    /// If `payload_override` is provided, the cast will use that node instead.
+    /// Note that `payload_override` is a `Node3D`, not a `PackedScene`.
+    /// If you need to pass a `PackedScene`, instantiate it in the call site first.
     pub fn fire_cast(
         &mut self,
         from: Transform3D,
@@ -123,10 +150,12 @@ impl FluoriteCastFactory {
         new_instance
     }
     #[func]
+    /// Check if this factory is tracking the given cast.
     pub fn is_tracking_this_cast(&self, &this: Gd<FluoriteCast>) -> bool {
         self.tracked_instances.contains(&this)
     }
     #[func]
+    /// Get the list of casts the factory is currently tracking.
     pub fn get_tracked_casts(&self) -> Array<Option<Gd<FluoriteCast>>> {
         let mut gdarray = Array::new();
         let mut tracked_iter = self.tracked_instances.iter();
@@ -138,6 +167,7 @@ impl FluoriteCastFactory {
         }
         gdarray
     }
+
     fn on_cast_freeing(&mut self, &this: Gd<FluoriteCast>) -> () {
         let taken = self.tracked_instances.remove(&this);
         if !taken {

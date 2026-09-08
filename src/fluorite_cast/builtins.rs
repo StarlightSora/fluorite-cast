@@ -27,19 +27,26 @@ impl Default for FluoriteBuiltinState {
 
 #[derive(GodotClass)]
 #[class(init, base=Resource)]
+/// The builtin configuration type to be injected into `FluoriteCast.custom_data_rs`.
 pub struct FluoriteBuiltinConfig {
     base: Base<Resource>,
     #[export]
     #[init(val = "fluorite_builtin_penetratable".to_string_name())]
+    /// The group name for nodes that should be penetratable finitely.
     pub penetratable_node_group_name: StringName,
     #[export]
     #[init(val = "fluorite_builtin_always_pen".to_string_name())]
+    /// The group name for nodes that should *always* be penetratable, infinitely.
     pub always_pen_node_group_name: StringName,
     #[export]
     #[init(val = 4)]
+    /// How many ancestors to search for to see if the collided instance is either
+    /// a descendant of a node that is in the group `penetratable_node_group_name`
+    /// or `always_pen_node_group_name`.
     pub upwards_search_recursion_limit: i64,
     #[export]
     #[init(val = 2)]
+    /// How many times the cast can penetrate through colliders within `penetratable_node_group_name` nodes.
     pub max_penetration_count: i64,
 }   
 
@@ -110,7 +117,7 @@ impl FluoriteCast {
                     if actually_valid.is_in_group(always_pen_group_name) {
                         return true
                     } else if actually_valid.is_in_group(target_group_name) {
-                        Self::add_ignore_rid(actually_valid, &mut ignore_list, true);
+                        ignore_list = Self::add_ignore_rid(actually_valid, ignore_list, true);
                         match collision_detection_mode {
                             CollisionDetectionMode::Ignore => {
                                 panic!("Unreachable code reached in _builtin_try_penetrate!")

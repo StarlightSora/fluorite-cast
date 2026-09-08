@@ -6,8 +6,11 @@ use super::fluorite_cast::{FluoriteCast, FluoriteSpaceCastResult};
 #[godot(via = i64)]
 pub enum EvaluateMode {
     #[default]
+    /// Automatically evaluate the cast every `physics_process`.
     PhysicsProcess,
+    /// Automatically evaluate the cast every `process`.
     Process,
+    /// Do not automatically evaluate the cast. Calling `evaluate` manually is needed.
     Manual,
 }
 
@@ -15,107 +18,129 @@ pub enum EvaluateMode {
 #[godot(via = i64)]
 pub enum ProjectileLookBehavior {
     #[default]
+    /// The cast will face towards the velocity vector every time it is evaluated.
     FollowVelocity,
+    /// The cast will have to be reoriented manually.
     Manual,
 }
 
 #[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
 #[godot(via = i64)]
 pub enum SuperSamplingMode {
+    /// Never supersample.
     Never,
     #[default]
+    /// Supersample only if `delta` is too long, when `evaluate` is called.
     IfAboveTargetDelta,
+    /// Supersample only if the calculated length on a `evaluate` call is too long.
     IfTooLong,
+    /// Supersample if `delta` or the calculated length is too long when `evaluate` is caled.
     IfAboveTargetDeltaOrTooLong,
 }
 
 #[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
 #[godot(via = i64)]
 pub enum GravityBehavior {
+    /// Ignore all gravity.
     Ignore,
     #[default]
+    /// Use global gravity as a constant.
     UseGlobalGravityCached,
+    /// Query global gravity every operation.
     UseGlobalGravityRealTime,
+    /// Query local gravity every operation.
     UseCurrentGravityRealTime,
 }
 
 #[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
 #[godot(via = i64)]
 pub enum FluidDynamicsBehavior {
-    /// Ignore all fluids
+    /// Ignore all fluids.
     Ignore,
-    /// Use global fluid as a constant
+    /// Use global fluid as a constant.
     #[default]
     UseGlobalFluidCached,
-    /// Query global fluid every operation
+    /// Query global fluid every operation.
     UseGlobalFluidRealTime,
-    /// Query current fluid every operation
+    /// Query current fluid every operation.
     UseCurrentFluidRealTime,
 }
 
 #[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
 #[godot(via = i64)]
 pub enum FluidDynamicsFidelity {
-    /// Do not simulate fluid dynamics at all
+    /// Do not simulate fluid dynamics at all.
     Ignore,
-    /// Simulate acceleration from ambient airspeed, but do not simulate drag
-    /// This works well enough for most arcade shooters
+    /// Simulate acceleration from ambient airspeed, but do not simulate drag.
+    /// 
+    /// This works well enough for most arcade shooters.
     #[default]
     OnlyAmbientAirspeed,
-    /// Simulate ambient airspeed and simulate drag with the drag coefficient constant, reference area constant, airspeed, and fluid density
-    /// This is good enough for most semi-realistic shooters
+    /// Simulate ambient airspeed and simulate drag with the drag coefficient constant,
+    /// reference area constant, airspeed, and fluid density.
+    /// 
+    /// This is good enough for most semi-realistic shooters.
     DragCoefficient,
-    /// Simulate ambient airspeed, and simulate drag with everything from DragCoefficient, and a multiplier based on the mach speed of the projectile
-    /// This can approximate proper fluid dynamics more closely with a fine tuned mach-based curve
+    /// Simulate ambient airspeed, and simulate drag with everything from `DragCoefficient`,
+    /// and a multiplier based on the mach speed of the projectile.
+    /// 
+    /// This can approximate proper fluid dynamics more closely with a fine tuned mach-based curve.
     DragCoefficientAndMach,
 }
 
 #[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
 #[godot(via = i64)]
 pub enum CollisionDetectionMode {
-    /// Do not check for collisions at all
-    /// This will cause the projectile to clip into colliders and never fire hit signals or run hit callbacks
+    /// Do not check for collisions at all.
+    /// 
+    /// This will cause the projectile to clip into colliders, and never fire hit signals or run hit callbacks.
     Ignore,
     #[default]
-    /// Collision check is done by raycasting
+    /// Collision check is done by raycasting.
     ByRaycast,
-    /// Collision check is done by shapecasting
+    /// Collision check is done by shapecasting.
     ByShapecast,
 }
 
 #[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
 #[godot(via = i64)]
 pub enum AlwaysExecuteCodeVia {
-    /// Use the associated FnMut assigned to the struct, panicking if not present
-    /// Suitable for direct Rust usage
+    /// Use the associated FnMut assigned to the struct, panicking if not present.
+    /// 
+    /// Suitable for direct Rust usage.
     #[default]
     ViaRustFnMut,
     /// Use a method named in snake_case implemented to a Godot Resource assigned to the struct,
-    /// panicking if not present
-    /// Suitable for GDScript usage
+    /// panicking if not present.
+    /// 
+    /// Suitable for GDScript usage.
     ViaMethodOnResourceSnakeCase,
     /// Use a method named in PascalCase implemented to a Godot Resource assigned to the struct,
-    /// panicking if not present
-    /// Suitable for C# usage
+    /// panicking if not present.
+    /// 
+    /// Suitable for C# usage.
     ViaMethodOnResourcePascalCase,
 }
 
 #[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
 #[godot(via = i64)]
 pub enum MaybeExecuteCodeVia {
-    /// Do not execute anything and always assume the default value in its place
+    /// Do not execute anything and always assume the default value in its place.
     #[default]
     NeverExecute,
-    /// Use the associated FnMut assigned to the struct, using the default value if not present
-    /// Suitable for direct Rust usage
+    /// Use the associated FnMut assigned to the struct, using the default value if not present.
+    /// 
+    /// Suitable for direct Rust usage.
     ViaRustFnMut,
     /// Use a method named in snake_case implemented to an associated Godot Resource assigned to the struct,
-    /// using the default value if not present
-    /// Suitable for GDScript usage
+    /// using the default value if not present.
+    /// 
+    /// Suitable for GDScript usage.
     ViaMethodOnResourceSnakeCase,
     /// Use a method named in PascalCase implemented to a Godot Resource assigned to the struct,
-    /// using the default value if not present
-    /// Suitable for C# usage
+    /// using the default value if not present.
+    /// 
+    /// Suitable for C# usage.
     ViaMethodOnResourcePascalCase,
 }
 
@@ -126,16 +151,30 @@ pub enum MaybeExecuteCodeVia {
 pub struct FluoriteCastCfgFluidDynamics {
     base: Base<Resource>,
     #[export]
+    /// How the cast will sample the local fluid.
     pub fluid_dynamics_behavior: FluidDynamicsBehavior,
     #[export]
+    /// The fidelity of the fluid dynamics simulation for the cast.
+    /// 
+    /// Only relevant if `fluid_dynamics_behavior` is `DragCoefficient` or higher.
     pub fluid_dynamics_fidelity: FluidDynamicsFidelity,
     #[export]
     #[init(val = 25.0)]
+    /// The reference area of the cast, in mm^2. Used for computing drag.
+    /// 
+    /// Only relevant if `fluid_dynamics_behavior` is `DragCoefficient` or higher.
     pub projectile_reference_area_mm2: f64, // We assume the reference area is a constant so we don't have to do needlessly expensive realtime computation
     #[export]
     #[init(val = 0.5)]
+    /// The drag coefficient of the cast, used for computing drag.
+    /// 
+    /// Only relevant if `fluid_dynamics_behavior` is `DragCoefficient` or higher.
     pub drag_coefficient: f64, // We assume the drag coefficient is *mostly* a constant for end user sanity
     #[export]
+    /// The mach-based drag multiplier for the cast.
+    /// 
+    /// Only relevant if `fluid_dynamics_behavior` is `DragCoefficientAndMach`.
+    /// It can be None (null) if otherwise.
     pub mach_based_drag_multiplier: Option<Gd<Curve>>,
 }
 #[godot_api]
@@ -156,6 +195,7 @@ impl FluoriteCastCfgFluidDynamics {
         })
     }
     #[func]
+    /// Always use this instead of `Self.new()`.
     pub fn new_default() -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -179,15 +219,19 @@ impl FluoriteCastCfgFluidDynamics {
 pub struct FluoriteCastCfgFidelity {
     base: Base<Resource>,
     #[export]
+    /// How the cast will supersample.
     pub super_sampling_mode: SuperSamplingMode,
     #[export]
     #[init(val = Self::delta_to_hz(120.0 * 0.95))]
+    /// The target `delta` for every `evaluate` call made.
     pub target_delta: f64,
     #[export]
     #[init(val = 25.0)]
+    /// The target calculated length for every `evaluate` call made
     pub target_length: f64,
     #[export]
     #[init(val = 4)]
+    /// The maximum limit of how many segments the cast can supersample to.
     pub max_supersampling: i64,
 }
 #[godot_api]
@@ -205,6 +249,7 @@ impl FluoriteCastCfgFidelity {
         })
     }
     #[func]
+    /// Always use this instead of `Self.new()`.
     pub fn new_default() -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -231,9 +276,11 @@ impl FluoriteCastCfgFidelity {
 pub struct FluoriteCastCfgGravity {
     base: Base<Resource>,
     #[export]
+    /// How the cast respects gravity.
     pub gravity_behavior: GravityBehavior,
     #[export]
     #[init(val = 1.0)]
+    /// The multiplier to the gravity that the cast experiences.
     pub gravity_multiplier: f64,
 }
 #[godot_api]
@@ -249,6 +296,7 @@ impl FluoriteCastCfgGravity {
         })
     }
     #[func]
+    /// Always use this instead of `Self.new()`.
     pub fn new_default() -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -265,36 +313,57 @@ impl FluoriteCastCfgGravity {
 pub struct FluoriteCastCfgHitDetection {
     base: Base<Resource>,
     #[export]
+    /// How the cast will detect collisions.
     pub collision_detection_mode: CollisionDetectionMode,
     #[export(flags_3d_physics)]
     #[init(val = u32::MAX)]
+    /// The collision mask for detecting collisions.
     pub hit_collision_mask: u32,
     #[export]
+    /// What nodes to ignore when checking collisions.
     pub exclude_list_paths_shallow: Array<NodePath>,
     #[export]
+    /// What nodes to ignore when checking collisions.
+    /// 
+    /// Will resolve recursively at runtime.
     pub exclude_list_paths_recursive: Array<NodePath>,
     #[export]
     #[init(val = false)]
+    /// Suppress warning about invalid node paths passed to `exclude_list_paths_*`.
     pub suppress_invalid_path_warnings: bool,
     #[export]
     #[init(val = None)]
+    /// The collision shape of the shapecast. This must be Some (non-null)
+    /// if `collision_detection_mode` is `ByShapecast`.
+    /// 
+    /// Otherwise, this property is irrelevant.
     pub hit_shape: Option<Gd<Shape3D>>,
     #[export]
+    /// The shape margin of the shapecast.
+    /// 
+    /// This property is only relevant if `collision_detection_mode` is `ByShapecast`.
     pub shape_margin: f64,
     #[export]
     #[init(val = Basis::IDENTITY)]
+    /// The basis of the shapecast.
+    /// 
+    /// This property is only relevant if `collision_detection_mode` is `ByShapecast`.
     pub shape_basis: Basis,
     #[export]
     #[init(val = true)]
+    /// If collision checks should respect back faces.
     pub should_hit_back_faces: bool,
     #[export]
     #[init(val = false)]
+    /// If collision checks should hit from inside.
     pub should_hit_from_inside: bool,
     #[export]
     #[init(val = false)]
+    /// If collision checks should respect `Area3D`s.
     pub should_collide_with_areas: bool,
     #[export]
     #[init(val = true)]
+    /// If collision checks should respect `PhysicsBody3D`s.
     pub should_collide_with_bodies: bool,
 }
 #[godot_api]
@@ -393,6 +462,7 @@ impl FluoriteCastCfgHitDetection {
         })
     }
     #[func]
+    /// Always use this instead of `Self.new()`.
     pub fn new_default() -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -420,7 +490,7 @@ pub struct FluoriteCastCfgBuiltinFlags {
     base: Base<Resource>,
     #[export]
     #[init(val = true)]
-    /// Use the builtin penetration system.
+    /// If the cast should use the builtin penetration system.
     pub builtin_penetration: bool,
 }
 #[godot_api]
@@ -437,6 +507,7 @@ impl FluoriteCastCfgBuiltinFlags {
         })
     }
     #[func]
+    /// Always use this instead of `Self.new()`.
     pub fn new_default() -> Gd<FluoriteCastCfgBuiltinFlags> {
         Gd::from_init_fn(|base| {
             Self {
@@ -452,13 +523,16 @@ impl FluoriteCastCfgBuiltinFlags {
 pub struct FluoriteCastCfgMethods {
     base: Base<Resource>,
     #[export]
-    /// Needs to implement:
+    /// Depending on `*_via` settings, the instance provided needs to implement:
     /// 
     /// `try_penetrate` or `TryPenetrate` => signature `(FluoriteCast, FluoriteSpaceCastResult) -> bool`
     /// 
     /// `cast_raw_evaluated` or `CastRawEvaluated` => signature `(FluoriteCast, Vector3, float, bool) -> void`
     /// 
     /// `on_new_cast` or `OnNewCast` => signature `(FluoriteCast) -> void`
+    /// 
+    /// This field must always be `Some` (non-`null`) **if any `*_via` properties are NOT Ignore nor ViaRustFnMut**.
+    /// If this invariant is broken, the cast will panic.
     pub methods_holder: Option<Gd<Resource>>,
 
     #[export]
@@ -469,15 +543,22 @@ pub struct FluoriteCastCfgMethods {
     pub builtin_flags: Option<Gd<FluoriteCastCfgBuiltinFlags>>,
 
     #[export]
+    /// Where to find and use the callback `try_penetrate`.
     pub try_penetrate_via: MaybeExecuteCodeVia,
+    /// The callback for `try_penetrate`, if using the `ViaRustFnMut` mode.
     pub try_penetrate_rs: Option<Box<dyn FnMut(&mut FluoriteCast, Gd<FluoriteSpaceCastResult>) -> bool>>,
 
     #[export]
+    /// Where to find and use the callback `cast_raw_evaluated`.
     pub cast_raw_evaluated_via: MaybeExecuteCodeVia,
+    /// The callback for `cast_raw_evaluated`, if using the `ViaRustFnMut` mode.
     pub cast_raw_evaluated_rs: Option<Box<dyn FnMut(&mut FluoriteCast, Vector3, f64, bool) -> ()>>,
 
     #[export]
+    /// Where to find and use the callback `on_new_cast`.
     pub on_new_cast_via: MaybeExecuteCodeVia,
+    /// The callback for `on_new_cast`, if using the `ViaRustFnMut` mode.
+    /// 
     /// If `self.config.cast_methods_cfg.builtin_flags` is None, then `self.custom_data_rs` will be None.
     /// If it's Some, then `self.custom_data_rs` will be populated as Some.
     /// 
@@ -488,7 +569,7 @@ pub struct FluoriteCastCfgMethods {
     #[init(val = true)]
     /// If this is false, you need to call `cleanup` on the instance manually when `expired` or `terminated` fires.
     /// 
-    /// Do not use `queue_free` directly, unless you need to bypass firing the `cleaning_up` signal.
+    /// Do not use `queue_free` directly, unless you need to bypass firing the `freeing` signal for some reason.
     pub auto_queue_free_on_terminate: bool,
 }
 #[godot_api]
@@ -518,6 +599,7 @@ impl FluoriteCastCfgMethods {
         })
     }
     #[func]
+    /// Always use this instead of `Self.new()`.
     pub fn new_default() -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -535,6 +617,8 @@ impl FluoriteCastCfgMethods {
         })
     }
 
+    /// Injection of `*_rs` properties is possible with this constructor.
+    /// Available on Rust-side only.
     pub fn new_config_rs(
         methods_holder: Option<Gd<Resource>>,
         auto_queue_free_on_terminate: bool,
@@ -573,19 +657,24 @@ pub struct FluoriteCastCfgGeneral {
     /// to test for Area3Ds.
     pub area_collision_shape: Option<Gd<Shape3D>>,
     #[export]
-    /// Only used when area_collision_shape is Some.
+    /// The basis for area collision checks.
+    /// Only relevant when area_collision_shape is Some.
     pub area_collision_basis: Basis,
     #[export(flags_3d_physics)]
     #[init(val = u32::MAX)]
+    /// The collision mask for detecting areas.
     pub area_collision_mask: u32,
     #[export]
     #[init(val = 15.0)]
+    /// How long the cast can live for before expiring.
     pub max_alive_time: f64,
     #[export]
     #[init(val = 2000.0)]
+    /// How far the cast can travel before expiring.
     pub max_total_length: f64,
     #[export]
     #[init(val = ProjectileLookBehavior::default())]
+    /// How the projectile will change its orientation every `evaluate` call.
     pub projectile_look_behavior: ProjectileLookBehavior,
 }
 #[godot_api]
@@ -612,6 +701,7 @@ impl FluoriteCastCfgGeneral {
         })
     }
     #[func]
+    /// Always use this instead of `Self.new()`.
     pub fn new_default() -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
@@ -634,6 +724,7 @@ impl FluoriteCastCfgGeneral {
 pub struct FluoriteCastConfig {
     base: Base<Resource>,
     #[export]
+    /// When the cast will evaluate.
     pub evaluate_mode: EvaluateMode,
     #[export]
     pub cast_general_cfg: Option<Gd<FluoriteCastCfgGeneral>>,
@@ -646,6 +737,8 @@ pub struct FluoriteCastConfig {
     #[export]
     pub cast_hit_detection_cfg: Option<Gd<FluoriteCastCfgHitDetection>>,
     #[export]
+    /// **This field must always be `Some`** (non-`null`).
+    /// If this invariant is broken, the cast will panic.
     pub cast_methods_cfg: Option<Gd<FluoriteCastCfgMethods>>,
     #[export]
     /// If you need to add FluoriteBuiltinConfig, add it with the key as `"__builtin"`.
@@ -680,7 +773,8 @@ impl FluoriteCastConfig {
         })
     }
     #[func]
-    pub fn new_default_config() -> Gd<Self> {
+    /// Always use this instead of `Self.new()`.
+    pub fn new_default() -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {
                 base,

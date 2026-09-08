@@ -4,6 +4,8 @@ use super::fluorite_cast::builtins;
 
 pub use super::fluorite_fluid_config::FluoriteFluidConfig;
 
+pub use super::fluorite_fluid_area3d::FluoriteFluidArea3D;
+
 pub use fluorite_cast::FluoriteCast;
 pub use fluorite_cast::FluoriteSpaceCastResult;
 

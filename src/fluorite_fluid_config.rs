@@ -8,14 +8,17 @@ pub struct FluoriteFluidConfig {
     base: Base<Resource>,
     #[export]
     #[init(val = 1.164)]
+    /// The density of the fluid, in kg/m^3.
     pub fluid_density_kgm3: f64, // kg/m3 scalar
     //#[export]
     //#[init(val = 30.6)]
     //pub dynamic_viscosity_upas: f64, // uPa*s scalar (NOT Pa*s) // NO LONGER NEEDED
     #[export]
     #[init(val = 332.0)]
+    /// The speed of sound in the fluid.
     pub speed_of_sound: f64, // m/s scalar
     #[export]
+    /// The ambient airspeed of the fluid. Think of it as wind.
     pub ambient_airspeed: Vector3, // m/s vector
 }
 
@@ -65,6 +68,7 @@ impl FluoriteFluidConfig {
         Self::new_water(Vector3::ZERO)
     }
     #[func]
+    /// Always use this instead of `Self.new()`.
     pub fn new_vacuum() -> Gd<Self> {
         Gd::from_init_fn(|base| {
             Self {

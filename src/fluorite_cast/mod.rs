@@ -42,6 +42,7 @@ use super::fluorite_cast_config::{
     ProjectileLookBehavior,
 };
 
+// Intermediate, type-safe representation for raycast and shapecast results
 enum SpaceCastResult {
     HitNothing,
     HitByRaycast(VarDictionary, Vector3),
@@ -50,27 +51,38 @@ enum SpaceCastResult {
 
 #[derive(GodotClass)]
 #[class(init, base=RefCounted)]
+/// Type-safe representation of point/ray/shapecast results.
 pub struct FluoriteSpaceCastResult {
     base: Base<RefCounted>,
     #[var]
+    /// Global position of where the cast hit.
     position: Vector3,
     #[var]
+    /// The object's surface normal at the intersection point,
+    /// or Vector3(0, 0, 0) if the ray starts inside the shape and `PhysicsRayQueryParameters3D.hit_from_inside` is `true`.
     normal: Vector3,
     #[var]
+    /// The intersecting object's RID.
     rid: i64,
     #[var]
+    /// The colliding object.
     collider: Option<Gd<Node3D>>,
     #[var]
+    /// The ID of the colliding object.
     collider_id: i64,
     #[var]
+    /// The shape index of the colliding shape.
     shape: i64,
     #[var]
+    /// How far the cast travelled from the origin for it to hit something.
     march_by: Vector3,
 }
 
 #[godot_api]
 impl FluoriteSpaceCastResult {
     #[func]
+    /// Construct a new `FluoriteSpaceCastResult`.
+    /// Always use this instead of `FluoriteSpaceCastResult.new()`.
     pub fn new_result(
         position: Vector3,
         normal: Vector3,
@@ -97,6 +109,10 @@ impl FluoriteSpaceCastResult {
 
 #[derive(GodotClass)]
 #[class(init, base=Node3D)]
+/// The core type of this library.
+/// 
+/// It works by manually simulating physics, bypassing inconsistency of the physics engine entirely,
+/// while making the projectile itself not affect physics objects in the scene directly (i.e. by causing a physics collision, moving a `RigidBody3D`).
 pub struct FluoriteCast {
     base: Base<Node3D>,
     gravity_cache: Option<Vector3>,
@@ -108,26 +124,58 @@ pub struct FluoriteCast {
     config: Gd<FluoriteCastConfig>,
     payload_node: Option<Gd<Node3D>>,
     #[var]
+    /// The current velocity of the cast.
+    /// This can be arbitrarily written to if modification of the velocity is desired.
     pub current_velocity: Vector3,
     #[var]
+    /// The current acceleration of the cast.
+    /// 
+    /// This applies **on top of implicit factors** such as gravity, wind and drag.
+    /// Implicit factors are not reflected in this property.
+    /// 
+    /// This can be arbitrarily written to if modification of the acceleration is desired.
     pub current_acceleration: Vector3,
     #[var]
+    /// How far the projectile traveled.
+    /// 
+    /// While safe to write be written to arbitrarily, there is usually no reason to do so.
     pub distance_covered: f32,
     #[var]
+    /// How long the projectile existed.
+    /// 
+    /// While safe to write be written to arbitrarily, there is usually no reason to do so.
     pub alive_for: f64,
     #[var]
+    /// What the projectile considers as the global fluid.
+    /// 
+    /// **This field must always be `Some`** (non-`null`).
+    /// If this invariant is broken, the cast will panic.
     pub global_fluid: Option<Gd<FluoriteFluidConfig>>,
     #[var]
+    /// Arbitrary data assigned to the cast.
+    /// 
+    /// This can be arbitrarily read from and written to as it fits the caller's needs.
     pub custom_data: VarDictionary,
     #[var]
+    /// The `PhysicsRayQueryParameters3D` cache for raycasting, if relevant.
+    /// 
+    /// There is usually no reason to write on this as the caller. Removing the cache arbitrarily may result in a panic.
     pub query_params_cache_ray: Option<Gd<PhysicsRayQueryParameters3D>>,
     #[var]
+    /// The `PhysicsShapeQueryParameters3D` cache for shapecasting, if relevant.
+    /// 
+    /// There is usually no reason to write on this as the caller. Removing the cache arbitrarily may result in a panic.
     pub query_params_cache_shape: Option<Gd<PhysicsShapeQueryParameters3D>>,
     #[var]
+    /// The `PhysicsPointQueryParameters3D` cache for testing for `Area3D`s, if relevant.
+    /// 
+    /// There is usually no reason to write on this as the caller. Removing the cache arbitrarily may result in a panic.
     pub area_test_cache_point: Option<Gd<PhysicsPointQueryParameters3D>>,
     #[var]
+    /// The `PhysicsShapeQueryParameters3D` cache for testing for `Area3D`s, if relevant.
+    /// 
+    /// There is usually no reason to write on this as the caller. Removing the cache arbitrarily may result in a panic.
     pub area_test_cache_shape: Option<Gd<PhysicsShapeQueryParameters3D>>,
-
     /// Meant as an alternative to `custom_data` if you use Rust to use this library, as it is generally faster and more type safe.
     /// 
     /// Since we cannot use generic types on structs registered to Godot, we upcast to Any in the struct definition
@@ -136,24 +184,35 @@ pub struct FluoriteCast {
     /// The builtin data type, if enabled, will be registered as the key `String::new("__builtin")` and the value resolves to the type `FluoriteBuiltinState`.
     /// This type contains all the information that builtin callbacks act on.
     /// 
-    /// This property is lazily populated; in particular, if self.config.cast_methods_cfg.builtin_flags is None, then this will be None.
+    /// This property is lazily populated; in particular, if `self.config.cast_methods_cfg.builtin_flags` is None, then this will be None.
     /// If it's Some, then this will be populated as Some, with the above mentioned key occupied.
+    /// 
+    /// See the source code of `super::builtins` to see how to upcast and downcast on this property if you're unsure.
     pub custom_data_rs: Option<HashMap<String, Box<dyn Any>>>,
 }
 
 #[godot_api]
 impl FluoriteCast {
     #[signal]
+    /// Fired when the projectile penetrates - that is, the projectile hit a collider, but it has decided to tunnel through it.
     pub fn penetrated(this: Gd<FluoriteCast>, cast_result: Gd<FluoriteSpaceCastResult>);
     #[signal]
+    /// Fired when the projectile terminates - that is, the projectile hit a collider, and it has decided to stop existing.
     pub fn terminated(this: Gd<FluoriteCast>, cast_result: Gd<FluoriteSpaceCastResult>);
     #[signal]
+    /// Fired when the projectile expires - that is, the projectile traveled too long or lived too long.
     pub fn expired(this: Gd<FluoriteCast>);
     #[signal]
+    /// Fired when the projectile is about to be freed.
     pub fn freeing(this: Gd<FluoriteCast>);
 
     #[func]
-    pub fn new_cast(&mut parent_to: Gd<Node3D>, payload: Option<Gd<Node3D>>, config: Gd<FluoriteCastConfig>, global_fluid: Gd<FluoriteFluidConfig>, custom_data: VarDictionary) -> Gd<Self> {
+    /// Constructs a new `FluoriteCast`.
+    /// Always use this instead of `FluoriteCast.new()`.
+    /// 
+    /// Unless you're explicitly making an ad-hoc cast, prefer casting on behalf of `FluoriteCastFactory` instead.
+    pub fn new_cast(
+        &mut parent_to: Gd<Node3D>, payload: Option<Gd<Node3D>>, config: Gd<FluoriteCastConfig>, global_fluid: Gd<FluoriteFluidConfig>, custom_data: VarDictionary) -> Gd<Self> {
         let mut new_node = Gd::from_init_fn(|base| {
             Self {
                 base,
@@ -398,7 +457,11 @@ impl FluoriteCast {
         }
     }
     
-    pub fn add_ignore_rid(from_node: Gd<Node>, ignore_list: &mut Array<Rid>, is_recursive: bool) -> () {
+    /// Adds the node `from_node`'s RID to the given `ignore_list`, recursively so if desired.
+    /// 
+    /// The given `ignore_list` will be consumed, mutated, then returned back as the output.
+    #[func]
+    pub fn add_ignore_rid(from_node: Gd<Node>, mut ignore_list: Array<Rid>, is_recursive: bool) -> Array<Rid> {
         fn recursive_search(mut from: Gd<Node>, mut arr: &mut Array<Rid>, depth: u8, should_recurse: bool) -> () {
             if depth == u8::MAX {
                 // who knows what abomination of a scene tree you have if you hit this limit
@@ -413,10 +476,12 @@ impl FluoriteCast {
                 .iter_shared()
                 .for_each(|child| recursive_search(child, &mut arr, depth + 1, should_recurse));
         }
-        recursive_search(from_node, ignore_list, 0, is_recursive);
+        recursive_search(from_node, &mut ignore_list, 0, is_recursive);
+        ignore_list
     }
 
     #[func]
+    /// Assign a payload to the cast, overwriting any pre-existing payload.
     pub fn assign_payload(&mut self, payload: Option<Gd<Node3D>>) -> () {
         if let Some(mut node) = self.payload_node.take() {
             node.queue_free();
@@ -427,27 +492,39 @@ impl FluoriteCast {
         }
     }
     #[func]
+    /// Gets a handle to the payload this cast has, if it exists.
     pub fn get_payload(&self) -> Option<Gd<Node3D>> {
         self.payload_node.clone()
     }
     #[func]
+    /// Check if this cast is disabled - that is, if it is ignoring any `evaluate` calls.
     pub fn is_disabled(&self) -> bool {
         self.disabled
     }
     #[func]
+    /// Check if this cast is being cleaned up and will be freed.
     pub fn is_scheduled_free(&self) -> bool {
         self.is_cleaning_up
     }
     #[func]
+    /// Fire the cast from the given `global_origin`, with the velocity as `direction`.
+    /// 
+    /// Unless you're explicitly making an ad-hoc cast, there is not much reason to call this.
+    /// Prefer casting on behalf of `FluoriteCastFactory` instead.
     pub fn fire(&mut self, global_origin: Transform3D, direction: Vector3) -> () {
         self.base_mut().set_global_transform(global_origin);
         self.add_velocity(direction);
     }
     #[func]
+    /// Increments the `current_velocity` of this cast.
     pub fn add_velocity(&mut self, by: Vector3) -> () {
         self.current_velocity += by;
     }
     #[func]
+    /// Evaluates the cast, advancing it forward by `delta` seconds.
+    /// The cast may be evaluated several times (by calling `evaluate_raw`), depending on supersampling settings.
+    /// 
+    /// You typically do not need to call this yourself unless `self.config.EvaluateMode` is `Manual`.
     pub fn evaluate(&mut self, delta: f64, forced: bool) -> () {
         if self.disabled && !forced {
             return
@@ -510,6 +587,10 @@ impl FluoriteCast {
         self.try_expire();
     }
     #[func]
+    /// Evaluate the cast by `delta` seconds.
+    /// 
+    /// There is not much reason to call this manually, prefer calling `evaluate` instead,
+    /// unless you have a good reason to bypass the abstraction and pre/post-checks that `evaluate` does.
     pub fn evaluate_raw(&mut self, delta: f64, forced: bool, override_dist: bool, overridden_dist_v3: Vector3, recursion_depth: i64) -> () {
         if self.disabled && !forced {
             return
@@ -690,6 +771,7 @@ impl FluoriteCast {
         }
     }
     #[func]
+    /// Check if the cast should be expired, and if so, make it expired.
     pub fn try_expire(&mut self) -> () {
         let alive_for = self.alive_for;
         let distance_covered = self.distance_covered;
@@ -715,6 +797,8 @@ impl FluoriteCast {
         }
     }
     #[func]
+    /// Cleans up the cast. Always call this instead of `free` or `queue_free`,
+    /// unless you have a good reason to bypass emitting the `freeing` signal.
     pub fn cleanup(&mut self) -> () {
         if self.is_cleaning_up { return }
         self.is_cleaning_up = true;
@@ -723,17 +807,21 @@ impl FluoriteCast {
         self.base_mut().queue_free();
     }
     #[func]
+    /// Get a handle to the `FluoriteCastConfig` inside the cast.
     pub fn get_config(&self) -> Gd<FluoriteCastConfig> {
         self.config.clone()
     }
     #[func]
-    /// signature of `with` in Godot should be: `(FluoriteCast) -> void`
+    /// Mutate the `FluoriteCastConfig` inside the cast on behalf of the callable `with`.
+    /// 
+    /// The callable signature of `with` should be: `(FluoriteCast) -> void`
     pub fn mut_config(&self, &with: Callable) -> () {
         with.call(&[
             self.config.to_variant()
         ]);
     }
     #[func]
+    /// Compute the drag force the cast experiences right now.
     pub fn compute_drag_full_approx(&mut self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
         // The general idea is as follows:
         // drag = -0.5 * gas_density * ref_area * airspeed^2 * drag_coefficient * airspeed_unit_vector
@@ -746,10 +834,12 @@ impl FluoriteCast {
         self.compute_drag_ideal(airspeed, airspeed_unit_vector) * (self.compute_drag_dyn_component_mach(airspeed) as f32)
     } 
     #[func]
+    /// Compute the drag force the cast experiences right now, ignoring the mach-based multiplier.
     pub fn compute_drag_ideal(&mut self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
         self.get_drag_const_component() as f32 * self.compute_drag_dyn_component_airspeed(airspeed, airspeed_unit_vector)
     } 
     #[func]
+    /// Compute the constant component of the drag force equation.
     pub fn compute_drag_const_component(&self, with_fluid_cfg: Gd<FluoriteFluidConfig>) -> f64 {
         let binding = self.config.bind();
         let current_fluid_cfg = with_fluid_cfg.bind();
@@ -759,10 +849,12 @@ impl FluoriteCast {
         -0.5 * current_fluid_cfg.fluid_density_kgm3 * (cast_fluid_dynamics_cfg.projectile_reference_area_mm2 / 1000.0 / 1000.0) * cast_fluid_dynamics_cfg.drag_coefficient
     }
     #[func]
+    /// Compute the airspeed component of the drag force equation.
     pub fn compute_drag_dyn_component_airspeed(&self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
         (airspeed * airspeed) as f32 * airspeed_unit_vector
     }
     #[func]
+    /// Compute the mach-based multiplier of the drag force equation.
     pub fn compute_drag_dyn_component_mach(&mut self, airspeed: f64) -> f64 {
         let maybe_curve = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().mach_based_drag_multiplier.clone();
         if let Some(curve) = maybe_curve {
@@ -773,6 +865,7 @@ impl FluoriteCast {
         }
     }
     #[func]
+    /// Gets the mach number of the cast.
     pub fn get_mach_number(&mut self, airspeed: f64) -> f64 {
         airspeed / self.speed_of_sound_cache.unwrap_or_else(|| {
             let fluid_dynamics_behavior = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().fluid_dynamics_behavior;
@@ -790,6 +883,10 @@ impl FluoriteCast {
         })
     }
     #[func]
+    /// Gets the constant component of the drag force equation.
+    /// 
+    /// It will just return the cached value if the constant component is cached.
+    /// Otherwise it will call `compute_drag_const_component` and forward the result.
     pub fn get_drag_const_component(&mut self) -> f64 {
         self.fluid_drag_const_cache.unwrap_or_else(|| {
             let fluid_dynamics_behavior = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().fluid_dynamics_behavior;
@@ -809,6 +906,7 @@ impl FluoriteCast {
         })
     }
     #[func]
+    /// Test if the cast should penetrate, according to the `cast_result`.
     pub fn try_penetrate(&mut self, cast_result: Gd<FluoriteSpaceCastResult>) -> bool {
         // this sucks, so it's abstracted away to this function
         // NOTE: it is FnMut because it needs to mutate state of self in a pragmatic implementation.
@@ -876,6 +974,7 @@ impl FluoriteCast {
         }
     }
     #[func]
+    /// Test if the projectile would collide with anything, in the given path `from` to `to`.
     pub fn try_intersect(&mut self, from: Vector3, to: Vector3) -> Option<Gd<FluoriteSpaceCastResult>> {
         let binding = self.config.bind();
         let hit_detection_cfg = binding.cast_hit_detection_cfg.as_ref().expect("hit_detection_cfg should always exist").bind();
@@ -974,7 +1073,9 @@ impl FluoriteCast {
         }
     }
     #[func]
+    /// Check what `Area3D`s the cast is overlapping with right now.
     pub fn scan_overlapping_area3ds(&mut self, max_results: i32) -> Array<VarDictionary> {
+        // PERF: This can get called twice every evaluate_raw call. Fix this later
         let mut direct_space = self.base().get_world_3d().expect("world_3d should exist").get_direct_space_state().expect("direct_space_state should exist");
         let result;
         if self.area_test_cache_shape.is_some() {
@@ -997,6 +1098,9 @@ impl FluoriteCast {
         result
     }
     #[func]
+    /// Get the config of the current fluid the cast is currently in.
+    /// 
+    /// This may return the global fluid instead depending on configuration.
     pub fn get_current_fluid_config(&mut self) -> Gd<FluoriteFluidConfig> {
         let result = self.scan_overlapping_area3ds(8);
         let mut fluid_area3ds = Vec::new();
@@ -1018,10 +1122,14 @@ impl FluoriteCast {
         })
     }
     #[func]
+    /// Get the config of the global fluid.
     pub fn get_global_fluid_config(&self) -> Gd<FluoriteFluidConfig> {
         self.global_fluid.clone().expect("Should always exist")
     }
     #[func]
+    /// Get the gravity force the cast is currently experiencing.
+    /// 
+    /// This may return the global gravity instead depending on configuration.
     pub fn get_current_gravity(&mut self) -> Vector3 {
         let result = self.scan_overlapping_area3ds(8);
         let mut gravity_area3ds = Vec::new();
@@ -1080,6 +1188,7 @@ impl FluoriteCast {
         gravity
     }
     #[func]
+    /// Get the global gravity.
     pub fn get_global_gravity(&self) -> Vector3 {
         let project_settings = ProjectSettings::singleton();
         project_settings.get_setting("physics/3d/default_gravity_vector").try_to::<Vector3>().expect("default_gravity_vector should be Vector3")
