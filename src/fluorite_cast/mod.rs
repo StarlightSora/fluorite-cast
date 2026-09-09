@@ -56,26 +56,26 @@ pub struct FluoriteSpaceCastResult {
     base: Base<RefCounted>,
     #[var]
     /// Global position of where the cast hit.
-    position: Vector3,
+    pub position: Vector3,
     #[var]
     /// The object's surface normal at the intersection point,
     /// or Vector3(0, 0, 0) if the ray starts inside the shape and `PhysicsRayQueryParameters3D.hit_from_inside` is `true`.
-    normal: Vector3,
+    pub normal: Vector3,
     #[var]
     /// The intersecting object's RID.
-    rid: i64,
+    pub rid: i64,
     #[var]
     /// The colliding object.
-    collider: Option<Gd<Node3D>>,
+    pub collider: Option<Gd<Node3D>>,
     #[var]
     /// The ID of the colliding object.
-    collider_id: i64,
+    pub collider_id: i64,
     #[var]
     /// The shape index of the colliding shape.
-    shape: i64,
+    pub shape: i64,
     #[var]
     /// How far the cast travelled from the origin for it to hit something.
-    march_by: Vector3,
+    pub march_by: Vector3,
 }
 
 #[godot_api]
