@@ -11,6 +11,9 @@ publish = false # Suppress publishing during dev build
 godot = { version = "0.5", features = ["upcoming-editor-placeholders"] }
 hashbrown = { version = "0.17" }
 
+[profile.dev]
+opt-level = 2
+
 ## Uncomment below two lines if building a standalone cdylib build
 #[lib]
 #crate-type = ["cdylib"]
