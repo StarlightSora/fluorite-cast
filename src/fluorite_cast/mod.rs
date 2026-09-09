@@ -9,6 +9,8 @@ pub mod builtins;
 // Though, we know that we can cast away all these safely as long as all the invariants are enforced by us and the caller.
 // Should an invariant be broken, a runtime panic will occur, and be printed out to Godot's output log.
 
+const MAX_CAST_RESULTS: i32 = 8;
+
 use godot::{
     classes::{
         Area3D,
@@ -600,6 +602,7 @@ impl FluoriteCast {
             return
         }
         if !override_dist {
+            let mut area_cache: Option<Array<VarDictionary>> = None;
             match self.gravity_cache {
                 None => {
                     let binding = self.config.bind();
@@ -615,7 +618,10 @@ impl FluoriteCast {
                             self.current_velocity += (res + self.current_acceleration)*(delta as f32);
                         },
                         GravityBehavior::UseCurrentGravityRealTime => {
-                            let grav = self.get_current_gravity();
+                            if area_cache.is_none() {
+                                area_cache.replace(self.scan_overlapping_area3ds(MAX_CAST_RESULTS));
+                            }
+                            let grav = self.get_current_gravity(area_cache.clone().expect("cache should be filled right above or upstream"));
                             // let grav = self.base().get_gravity(); // This doesn't work! We need a custom gravity calculator!
                             self.current_velocity += ((grav*(gravity_multiplier as f32)) + self.current_acceleration)*(delta as f32);
                         },
@@ -639,7 +645,10 @@ impl FluoriteCast {
                         self.get_global_fluid_config().bind().ambient_airspeed
                     },
                     FluidDynamicsBehavior::UseCurrentFluidRealTime => {
-                        self.get_current_fluid_config().bind().ambient_airspeed
+                        if area_cache.is_none() {
+                            area_cache.replace(self.scan_overlapping_area3ds(MAX_CAST_RESULTS));
+                        }
+                        self.get_current_fluid_config(area_cache.clone().expect("cache should be filled right above or upstream")).bind().ambient_airspeed
                     },
                     _ => {
                         panic!("fluid_dynamics_behavior was not *RealTime while ambient_airspeed_cache was None!")
@@ -654,13 +663,21 @@ impl FluoriteCast {
                 FluidDynamicsFidelity::DragCoefficient => {
                     self.current_velocity += ambient_airspeed*(delta as f32);
                     let external_airspeed = self.current_velocity - ambient_airspeed;
-                    let drag = self.compute_drag_ideal(external_airspeed.length() as f64, external_airspeed.normalized())*(delta as f32);
+                    let drag = self.compute_drag_ideal(
+                        external_airspeed.length() as f64,
+                        external_airspeed.normalized(),
+                        area_cache.clone().unwrap_or_default()
+                    )*(delta as f32);
                     self.current_velocity += drag;
                 },
                 FluidDynamicsFidelity::DragCoefficientAndMach => {
                     self.current_velocity += ambient_airspeed*(delta as f32);
                     let external_airspeed = self.current_velocity - ambient_airspeed;
-                    let drag = self.compute_drag_full_approx(external_airspeed.length() as f64, external_airspeed.normalized())*(delta as f32);
+                    let drag = self.compute_drag_full_approx(
+                        external_airspeed.length() as f64,
+                        external_airspeed.normalized(),
+                        area_cache.unwrap_or_default() // last time we need area_cache, so don't clone
+                    )*(delta as f32);
                     self.current_velocity += drag
                 },
             }
@@ -822,7 +839,7 @@ impl FluoriteCast {
     }
     #[func]
     /// Compute the drag force the cast experiences right now.
-    pub fn compute_drag_full_approx(&mut self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
+    pub fn compute_drag_full_approx(&mut self, airspeed: f64, airspeed_unit_vector: Vector3, overlap_cache: Array<VarDictionary>) -> Vector3 {
         // The general idea is as follows:
         // drag = -0.5 * gas_density * ref_area * airspeed^2 * drag_coefficient * airspeed_unit_vector
         // where drag_coefficient = too_complicated_to_compute_for_this_library_so_const * some_curve.map_to(airspeed / speed_of_sound)
@@ -831,12 +848,12 @@ impl FluoriteCast {
         // where gas_density + ref_area + speed_of_sound + too_complicated_to_compute_for_this_library_so_const is const
         // where airspeed + airspeed_unit_vector is dyn
         // where some_curve is Curve
-        self.compute_drag_ideal(airspeed, airspeed_unit_vector) * (self.compute_drag_dyn_component_mach(airspeed) as f32)
+        self.compute_drag_ideal(airspeed, airspeed_unit_vector, overlap_cache.clone()) * (self.compute_drag_dyn_component_mach(airspeed, overlap_cache) as f32)
     } 
     #[func]
     /// Compute the drag force the cast experiences right now, ignoring the mach-based multiplier.
-    pub fn compute_drag_ideal(&mut self, airspeed: f64, airspeed_unit_vector: Vector3) -> Vector3 {
-        self.get_drag_const_component() as f32 * self.compute_drag_dyn_component_airspeed(airspeed, airspeed_unit_vector)
+    pub fn compute_drag_ideal(&mut self, airspeed: f64, airspeed_unit_vector: Vector3, overlap_cache: Array<VarDictionary>) -> Vector3 {
+        self.get_drag_const_component(overlap_cache) as f32 * self.compute_drag_dyn_component_airspeed(airspeed, airspeed_unit_vector)
     } 
     #[func]
     /// Compute the constant component of the drag force equation.
@@ -855,10 +872,10 @@ impl FluoriteCast {
     }
     #[func]
     /// Compute the mach-based multiplier of the drag force equation.
-    pub fn compute_drag_dyn_component_mach(&mut self, airspeed: f64) -> f64 {
+    pub fn compute_drag_dyn_component_mach(&mut self, airspeed: f64, overlap_cache: Array<VarDictionary>) -> f64 {
         let maybe_curve = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().mach_based_drag_multiplier.clone();
         if let Some(curve) = maybe_curve {
-            let mach_number = self.get_mach_number(airspeed) as f32;
+            let mach_number = self.get_mach_number(airspeed, overlap_cache) as f32;
             curve.sample(mach_number) as f64
         } else {
             1.0
@@ -866,7 +883,7 @@ impl FluoriteCast {
     }
     #[func]
     /// Gets the mach number of the cast.
-    pub fn get_mach_number(&mut self, airspeed: f64) -> f64 {
+    pub fn get_mach_number(&mut self, airspeed: f64, overlap_cache: Array<VarDictionary>) -> f64 {
         airspeed / self.speed_of_sound_cache.unwrap_or_else(|| {
             let fluid_dynamics_behavior = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().fluid_dynamics_behavior;
             match fluid_dynamics_behavior {
@@ -874,7 +891,7 @@ impl FluoriteCast {
                     self.get_global_fluid_config().bind().speed_of_sound
                 },
                 FluidDynamicsBehavior::UseCurrentFluidRealTime => {
-                    self.get_current_fluid_config().bind().speed_of_sound
+                    self.get_current_fluid_config(overlap_cache).bind().speed_of_sound
                 },
                 _ => {
                     panic!("fluid_dynamics_behavior was not *RealTime while speed_of_sound_cache was None!")
@@ -887,7 +904,7 @@ impl FluoriteCast {
     /// 
     /// It will just return the cached value if the constant component is cached.
     /// Otherwise it will call `compute_drag_const_component` and forward the result.
-    pub fn get_drag_const_component(&mut self) -> f64 {
+    pub fn get_drag_const_component(&mut self, overlap_cache: Array<VarDictionary>) -> f64 {
         self.fluid_drag_const_cache.unwrap_or_else(|| {
             let fluid_dynamics_behavior = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().fluid_dynamics_behavior;
             match fluid_dynamics_behavior {
@@ -896,7 +913,7 @@ impl FluoriteCast {
                     self.compute_drag_const_component(fluid)
                 },
                 FluidDynamicsBehavior::UseCurrentFluidRealTime => {
-                    let fluid = self.get_current_fluid_config();
+                    let fluid = self.get_current_fluid_config(overlap_cache);
                     self.compute_drag_const_component(fluid)
                 },
                 _ => {
@@ -1022,7 +1039,7 @@ impl FluoriteCast {
                         let res_cid: i64 = res.get("collider_id").expect("collider_id should exist").try_to().expect("Should be an i64");
                         let mut res_creal = None;
                         let res2 = direct_space.intersect_shape_ex(&*query_params)
-                            .max_results(8)
+                            .max_results(MAX_CAST_RESULTS)
                             .done();
                         for entry in res2.iter_shared() {
                             if entry.get("collider_id").as_ref().is_some_and(|x| x.try_to::<i64>().expect("Should be an i64") == res_cid) {
@@ -1075,7 +1092,6 @@ impl FluoriteCast {
     #[func]
     /// Check what `Area3D`s the cast is overlapping with right now.
     pub fn scan_overlapping_area3ds(&mut self, max_results: i32) -> Array<VarDictionary> {
-        // PERF: This can get called twice every evaluate_raw call. Fix this later
         let mut direct_space = self.base().get_world_3d().expect("world_3d should exist").get_direct_space_state().expect("direct_space_state should exist");
         let result;
         if self.area_test_cache_shape.is_some() {
@@ -1099,10 +1115,8 @@ impl FluoriteCast {
     }
     #[func]
     /// Get the config of the current fluid the cast is currently in.
-    /// 
-    /// This may return the global fluid instead depending on configuration.
-    pub fn get_current_fluid_config(&mut self) -> Gd<FluoriteFluidConfig> {
-        let result = self.scan_overlapping_area3ds(8);
+    pub fn get_current_fluid_config(&self, overlap_cache: Array<VarDictionary>) -> Gd<FluoriteFluidConfig> {
+        let result = overlap_cache; //self.scan_overlapping_area3ds(MAX_CAST_RESULTS);
         let mut fluid_area3ds = Vec::new();
         for entry in result.iter_shared() {
             if
@@ -1124,14 +1138,12 @@ impl FluoriteCast {
     #[func]
     /// Get the config of the global fluid.
     pub fn get_global_fluid_config(&self) -> Gd<FluoriteFluidConfig> {
-        self.global_fluid.clone().expect("Should always exist")
+        self.global_fluid.clone().expect("global_fluid should always exist")
     }
     #[func]
     /// Get the gravity force the cast is currently experiencing.
-    /// 
-    /// This may return the global gravity instead depending on configuration.
-    pub fn get_current_gravity(&mut self) -> Vector3 {
-        let result = self.scan_overlapping_area3ds(8);
+    pub fn get_current_gravity(&self, overlap_cache: Array<VarDictionary>) -> Vector3 {
+        let result = overlap_cache; //self.scan_overlapping_area3ds(MAX_CAST_RESULTS);
         let mut gravity_area3ds = Vec::new();
         for entry in result.iter_shared() {
             if

@@ -20,6 +20,8 @@ pub struct FluoriteFluidConfig {
     #[export]
     /// The ambient airspeed of the fluid. Think of it as wind.
     pub ambient_airspeed: Vector3, // m/s vector
+    // TODO: We simply shove projectiles by ambient_airspeed as acceleration, which disregards the mass and surface area of the projectile.
+    // This is unrealistic, especially with bigger projectiles.
 }
 
 #[godot_api]
