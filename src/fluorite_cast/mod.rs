@@ -639,16 +639,26 @@ impl FluoriteCast {
             let fluid_dynamics_behavior = cast_fluid_dynamics_cfg_bind.fluid_dynamics_behavior;
             drop(cast_fluid_dynamics_cfg_bind);
             drop(self_config_binding);
-            let ambient_airspeed = self.ambient_airspeed_cache.unwrap_or_else(|| {
+            let maybe_fluid_config = {
                 match fluid_dynamics_behavior {
                     FluidDynamicsBehavior::UseGlobalFluidRealTime => {
-                        self.get_global_fluid_config().bind().ambient_airspeed
+                        Some(self.get_global_fluid_config())
                     },
                     FluidDynamicsBehavior::UseCurrentFluidRealTime => {
                         if area_cache.is_none() {
                             area_cache.replace(self.scan_overlapping_area3ds(MAX_CAST_RESULTS));
                         }
-                        self.get_current_fluid_config(area_cache.clone().expect("cache should be filled right above or upstream")).bind().ambient_airspeed
+                        Some(self.get_current_fluid_config(area_cache.clone().expect("cache should be filled right above or upstream")))
+                    },
+                    _ => {
+                        None
+                    },
+                }
+            };
+            let ambient_airspeed = self.ambient_airspeed_cache.unwrap_or_else(|| {
+                match fluid_dynamics_behavior {
+                    FluidDynamicsBehavior::UseGlobalFluidRealTime | FluidDynamicsBehavior::UseCurrentFluidRealTime => {
+                        maybe_fluid_config.clone().expect("maybe_fluid_config should be Some").bind().ambient_airspeed
                     },
                     _ => {
                         panic!("fluid_dynamics_behavior was not *RealTime while ambient_airspeed_cache was None!")
@@ -666,7 +676,7 @@ impl FluoriteCast {
                     let drag = self.compute_drag_ideal(
                         external_airspeed.length() as f64,
                         external_airspeed.normalized(),
-                        area_cache.clone().unwrap_or_default()
+                        maybe_fluid_config.clone()
                     )*(delta as f32);
                     self.current_velocity += drag;
                 },
@@ -676,7 +686,7 @@ impl FluoriteCast {
                     let drag = self.compute_drag_full_approx(
                         external_airspeed.length() as f64,
                         external_airspeed.normalized(),
-                        area_cache.unwrap_or_default() // last time we need area_cache, so don't clone
+                        maybe_fluid_config // last time we need area_cache, so don't clone
                     )*(delta as f32);
                     self.current_velocity += drag
                 },
@@ -839,7 +849,7 @@ impl FluoriteCast {
     }
     #[func]
     /// Compute the drag force the cast experiences right now.
-    pub fn compute_drag_full_approx(&mut self, airspeed: f64, airspeed_unit_vector: Vector3, overlap_cache: Array<VarDictionary>) -> Vector3 {
+    pub fn compute_drag_full_approx(&mut self, airspeed: f64, airspeed_unit_vector: Vector3, maybe_fluid_cfg: Option<Gd<FluoriteFluidConfig>>) -> Vector3 {
         // The general idea is as follows:
         // drag = -0.5 * gas_density * ref_area * airspeed^2 * drag_coefficient * airspeed_unit_vector
         // where drag_coefficient = too_complicated_to_compute_for_this_library_so_const * some_curve.map_to(airspeed / speed_of_sound)
@@ -848,12 +858,12 @@ impl FluoriteCast {
         // where gas_density + ref_area + speed_of_sound + too_complicated_to_compute_for_this_library_so_const is const
         // where airspeed + airspeed_unit_vector is dyn
         // where some_curve is Curve
-        self.compute_drag_ideal(airspeed, airspeed_unit_vector, overlap_cache.clone()) * (self.compute_drag_dyn_component_mach(airspeed, overlap_cache) as f32)
+        self.compute_drag_ideal(airspeed, airspeed_unit_vector, maybe_fluid_cfg.clone()) * (self.compute_drag_dyn_component_mach(airspeed, maybe_fluid_cfg) as f32)
     } 
     #[func]
     /// Compute the drag force the cast experiences right now, ignoring the mach-based multiplier.
-    pub fn compute_drag_ideal(&mut self, airspeed: f64, airspeed_unit_vector: Vector3, overlap_cache: Array<VarDictionary>) -> Vector3 {
-        self.get_drag_const_component(overlap_cache) as f32 * self.compute_drag_dyn_component_airspeed(airspeed, airspeed_unit_vector)
+    pub fn compute_drag_ideal(&mut self, airspeed: f64, airspeed_unit_vector: Vector3, maybe_fluid_cfg: Option<Gd<FluoriteFluidConfig>>) -> Vector3 {
+        self.get_drag_const_component(maybe_fluid_cfg) as f32 * self.compute_drag_dyn_component_airspeed(airspeed, airspeed_unit_vector)
     } 
     #[func]
     /// Compute the constant component of the drag force equation.
@@ -872,10 +882,10 @@ impl FluoriteCast {
     }
     #[func]
     /// Compute the mach-based multiplier of the drag force equation.
-    pub fn compute_drag_dyn_component_mach(&mut self, airspeed: f64, overlap_cache: Array<VarDictionary>) -> f64 {
+    pub fn compute_drag_dyn_component_mach(&mut self, airspeed: f64, maybe_fluid_cfg: Option<Gd<FluoriteFluidConfig>>) -> f64 {
         let maybe_curve = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().mach_based_drag_multiplier.clone();
         if let Some(curve) = maybe_curve {
-            let mach_number = self.get_mach_number(airspeed, overlap_cache) as f32;
+            let mach_number = self.get_mach_number(airspeed, maybe_fluid_cfg) as f32;
             curve.sample(mach_number) as f64
         } else {
             1.0
@@ -883,15 +893,15 @@ impl FluoriteCast {
     }
     #[func]
     /// Gets the mach number of the cast.
-    pub fn get_mach_number(&mut self, airspeed: f64, overlap_cache: Array<VarDictionary>) -> f64 {
+    pub fn get_mach_number(&mut self, airspeed: f64, maybe_fluid_cfg: Option<Gd<FluoriteFluidConfig>>) -> f64 {
         airspeed / self.speed_of_sound_cache.unwrap_or_else(|| {
             let fluid_dynamics_behavior = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().fluid_dynamics_behavior;
             match fluid_dynamics_behavior {
                 FluidDynamicsBehavior::UseGlobalFluidRealTime => {
-                    self.get_global_fluid_config().bind().speed_of_sound
+                    maybe_fluid_cfg.expect("maybe_fluid_cfg should be Some in UseGlobalFluidRealTime").bind().speed_of_sound
                 },
                 FluidDynamicsBehavior::UseCurrentFluidRealTime => {
-                    self.get_current_fluid_config(overlap_cache).bind().speed_of_sound
+                    maybe_fluid_cfg.expect("maybe_fluid_cfg should be Some in UseCurrentFluidRealTime").bind().speed_of_sound
                 },
                 _ => {
                     panic!("fluid_dynamics_behavior was not *RealTime while speed_of_sound_cache was None!")
@@ -904,16 +914,16 @@ impl FluoriteCast {
     /// 
     /// It will just return the cached value if the constant component is cached.
     /// Otherwise it will call `compute_drag_const_component` and forward the result.
-    pub fn get_drag_const_component(&mut self, overlap_cache: Array<VarDictionary>) -> f64 {
+    pub fn get_drag_const_component(&mut self, maybe_fluid_cfg: Option<Gd<FluoriteFluidConfig>>) -> f64 {
         self.fluid_drag_const_cache.unwrap_or_else(|| {
             let fluid_dynamics_behavior = self.config.bind().cast_fluid_dynamics_cfg.as_ref().expect("cast_fluid_dynamics_cfg should always exist").bind().fluid_dynamics_behavior;
             match fluid_dynamics_behavior {
                 FluidDynamicsBehavior::UseGlobalFluidRealTime => {
-                    let fluid = self.get_global_fluid_config();
+                    let fluid = maybe_fluid_cfg.expect("maybe_fluid_cfg should be Some in UseGlobalFluidRealTime");
                     self.compute_drag_const_component(fluid)
                 },
                 FluidDynamicsBehavior::UseCurrentFluidRealTime => {
-                    let fluid = self.get_current_fluid_config(overlap_cache);
+                    let fluid = maybe_fluid_cfg.expect("maybe_fluid_cfg should be Some in UseCurrentFluidRealTime");
                     self.compute_drag_const_component(fluid)
                 },
                 _ => {
