@@ -230,8 +230,11 @@ pub struct FluoriteCastCfgFidelity {
     /// The target calculated length for every `evaluate` call made
     pub target_length: f64,
     #[export]
-    #[init(val = 4)]
+    #[init(val = 2)]
     /// The maximum limit of how many segments the cast can supersample to.
+    /// 
+    /// WARNING: Having this value too high (typically 4 or bigger)
+    /// may cause recursively worsening performance if under the `target_delta` significantly.
     pub max_supersampling: i64,
 }
 #[godot_api]
@@ -665,11 +668,11 @@ pub struct FluoriteCastCfgGeneral {
     /// The collision mask for detecting areas.
     pub area_collision_mask: u32,
     #[export]
-    #[init(val = 15.0)]
+    #[init(val = 10.0)]
     /// How long the cast can live for before expiring.
     pub max_alive_time: f64,
     #[export]
-    #[init(val = 2000.0)]
+    #[init(val = 1250.0)]
     /// How far the cast can travel before expiring.
     pub max_total_length: f64,
     #[export]
