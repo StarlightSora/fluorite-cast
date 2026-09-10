@@ -41,7 +41,9 @@ func _on_timer_timeout() -> void:
 
 ### From Precompiled Binary (Easiest)
 
-Visit the [releases](https://github.com/StarlightSora/fluorite-cast/releases) page. *(TODO: More information regarding this goes here when a release is actually made)*
+Visit the [releases](https://github.com/StarlightSora/fluorite-cast/releases) page, and download the latest release. It should be named `fluorite-cast_(VERSION NUMBER).7z`.
+
+Unzip the folder. You should get a folder named `fluorite-cast`. Move this folder to the `addons` folder of your project (if it doesn't exist, then make it).
 
 ### For a Project Already Using [`godot-rust`](https://github.com/godot-rust/gdext)
 
@@ -75,8 +77,6 @@ Make sure you have [rustup](https://rustup.rs/) installed.
 
 Now run `cargo build`. The built dynamic library file should be generated in `target/debug/`.
 
-*(TODO: GDExtension setup)*
+You'll have to set up the `.gdextension` file as well for Godot to recognize the dynamic library file. This is explained in more detail in the [godot-rust book](https://godot-rust.github.io/book/intro/hello-world.html#wire-up-godot-with-rust).
 
-## WIP
-
-If you *really* want to try this out now, you need a Godot 4 project using godot-rust; clone this repository and move it into your root crate and use it as a dependency.
+The `entry_symbol` of this library is `fluorite_cast`.
