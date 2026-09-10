@@ -15,7 +15,7 @@ extends Node3D
 # This is our factory instance, which will make and fire casts
 @onready var factory: FluoriteCastFactory = FluoriteCastFactory.new_factory(
 		self, # Casts will be parented to this node
-		payload_scene, # Casts will carry this as the payload
+		payload_scene, # Casts will carry this as the payload (nullable)
 		cast_cfg, # Casts will behave like this
 		global_fluid_cfg # The global air is configured like this
 	)
@@ -28,10 +28,10 @@ func _ready() -> void:
 
 
 func _on_timer_timeout() -> void:
-    # Cast will spawn from here
-	var origin = Transform3D(Basis.IDENTITY, Vector3(-5.0, 0.0, 0.0))
+	# Cast will spawn from here
+	var origin = Transform3D(Basis.IDENTITY, Vector3(-7.0, 0.0, 0.0))
 	var speed: float = 15.0
-	var direction: Vector3 = Vector3(10.0, 2.0, 0.0).normalized()
+	var direction: Vector3 = Vector3(15.0, 2.0, 0.0).normalized()
 	
 	# Our will have this velocity
 	var velocity: Vector3 = speed*direction;
@@ -41,20 +41,29 @@ func _on_timer_timeout() -> void:
 
 ## Installation
 
-### From Precompiled Binary (Easiest)
+### From Precompiled Binary (Recommended)
+
+This is the recommended way for most cases.
 
 Visit the [releases](https://github.com/StarlightSora/fluorite-cast/releases) page, and download the latest release. It should be named `fluorite-cast_(VERSION NUMBER).7z`.
 
 Unzip the folder. You should get a folder named `fluorite-cast`. Move this folder to the `addons` folder of your project (if it doesn't exist, then make it).
 
+Note that only Windows and Linux binaries are provided at the moment. If you need support for other platforms, you will need to build from source.
+
 ### For a Project Already Using [`godot-rust`](https://github.com/godot-rust/gdext)
+
+This is recommended if you already have a project using `godot-rust`, or want to use the Rust-only features of this library for extra performance.
 
 Run `cargo add fluorite-cast` in your root crate. *(TODO: We don't have a crates.io release yet)*
 
 Or alternatively, `git clone` this repository in your root crate, then edit your `Cargo.toml`'s `[dependencies]` section so it has this line:
 
 ```toml
+[dependencies]
+# ...
 fluorite-cast = { path = "fluorite-cast" }
+# ...
 ```
 
 Then make sure to add this to your root crate's `lib.rs`:

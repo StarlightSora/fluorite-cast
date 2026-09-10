@@ -125,6 +125,7 @@ pub struct FluoriteCast {
     is_cleaning_up: bool,
     config: Gd<FluoriteCastConfig>,
     payload_node: Option<Gd<Node3D>>,
+    ignore_internal_evaluate_calls: bool,
     #[var]
     /// The current velocity of the cast.
     /// This can be arbitrarily written to if modification of the velocity is desired.
@@ -214,7 +215,13 @@ impl FluoriteCast {
     /// 
     /// Unless you're explicitly making an ad-hoc cast, prefer casting on behalf of `FluoriteCastFactory` instead.
     pub fn new_cast(
-        &mut parent_to: Gd<Node3D>, payload: Option<Gd<Node3D>>, config: Gd<FluoriteCastConfig>, global_fluid: Gd<FluoriteFluidConfig>, custom_data: VarDictionary) -> Gd<Self> {
+        &mut parent_to: Gd<Node3D>,
+        payload: Option<Gd<Node3D>>,
+        config: Gd<FluoriteCastConfig>,
+        global_fluid: Gd<FluoriteFluidConfig>,
+        custom_data: VarDictionary,
+        ignore_internal_evaluate_calls: bool,
+    ) -> Gd<Self> {
         let mut new_node = Gd::from_init_fn(|base| {
             Self {
                 base,
@@ -237,6 +244,7 @@ impl FluoriteCast {
                 area_test_cache_point: None,
                 area_test_cache_shape: None,
                 custom_data_rs: None,
+                ignore_internal_evaluate_calls,
             }
         });
         // The base needs to be `StaticBody3D`, and a `CollisionShape3D` is needed so we can use `get_gravity` for `UseCurrentGravityRealTime` mode
@@ -1222,6 +1230,7 @@ impl FluoriteCast {
 #[godot_api]
 impl INode3D for FluoriteCast {
     fn process(&mut self, delta: f64) {
+        if self.ignore_internal_evaluate_calls { return; }
         let mut can_do = false; // The stupid crap borrowck forces me to do
         if let EvaluateMode::Process = self.config.bind().evaluate_mode {
             can_do = true;
@@ -1231,6 +1240,7 @@ impl INode3D for FluoriteCast {
         }
     }
     fn physics_process(&mut self, delta: f64) {
+        if self.ignore_internal_evaluate_calls { return; }
         let mut can_do = false;
         if let EvaluateMode::PhysicsProcess = self.config.bind().evaluate_mode {
             can_do = true;

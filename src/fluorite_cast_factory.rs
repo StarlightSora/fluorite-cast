@@ -1,7 +1,16 @@
 use godot::{meta::conv::ObjectToOwned, prelude::*};
 
 use hashbrown::HashSet;
-use crate::prelude::*;
+use super::{fluorite_cast_config::EvaluateMode, prelude::*};
+
+#[derive(GodotClass)]
+#[class(init, base=Resource)]
+pub struct FluoriteCastFactoryConfig {
+    base: Base<Resource>,
+    #[export]
+    #[init(val = true)]
+    pub centralize_evaluations: bool
+}
 
 #[derive(GodotClass)]
 #[class(init, base=Node3D)]
@@ -30,6 +39,13 @@ pub struct FluoriteCastFactory {
     /// **This field must always be `Some`** (non-`null`).
     /// If this invariant is broken, the cast will panic.
     pub global_fluid: Option<Gd<FluoriteFluidConfig>>,
+    #[export]
+    /// If true, all casts that this factory instantiates will never autonomously call `evaluate`.
+    /// Instead, the factory will call `evaluate` on all tracked casts at once every `process` or `physics_process`.
+    /// 
+    /// Note that it is a logical error if a `config_override` you passed in a `fire_cast` call
+    /// has a different `evaluate_mode` setting than the factory's `projectile_config` with this setting enabled.
+    pub orchestrates_evaluation: bool, // Possibly used for multithreading support in the future
 }
 
 #[godot_api]
@@ -54,6 +70,7 @@ impl FluoriteCastFactory {
         payload_scene: Option<Gd<PackedScene>>,
         projectile_config: Gd<FluoriteCastConfig>,
         global_fluid: Gd<FluoriteFluidConfig>,
+        orchestrates_evaluation: bool,
         // TODO: Instance pooling struct maybe?
     ) -> Gd<Self> {
         Gd::from_init_fn(|base| {
@@ -64,6 +81,7 @@ impl FluoriteCastFactory {
                 payload_scene,
                 projectile_config: Some(projectile_config),
                 global_fluid: Some(global_fluid),
+                orchestrates_evaluation,
             }
         })
     }
@@ -82,7 +100,7 @@ impl FluoriteCastFactory {
         towards: Vector3,
         custom_data: VarDictionary,
         config_override: Option<Gd<FluoriteCastConfig>>,
-        // if you are injecting a payload_override, it must be pre-instantiated, this is a conscious decision for allowing better control on the caller
+        // if you are injecting a payload_override, it must be pre-instantiated, this is a conscious decision for allowing better control on the caller's side
         payload_override: Option<Gd<Node3D>>,
     ) -> Gd<FluoriteCast> {
         let mut new_instance = FluoriteCast::new_cast(
@@ -97,6 +115,7 @@ impl FluoriteCastFactory {
             }),
             self.global_fluid.as_ref().expect("global_fluid should always exist").clone(),
             custom_data,
+            self.orchestrates_evaluation,
         );
         let prev = self.tracked_instances.replace(new_instance.clone());
         prev.inspect(|x| {
@@ -155,7 +174,7 @@ impl FluoriteCastFactory {
         self.tracked_instances.contains(&this)
     }
     #[func]
-    /// Get the list of casts the factory is currently tracking.
+    /// Get the list of casts the factory is currently tracking. Returns in Godot `Array` type.
     pub fn get_tracked_casts(&self) -> Array<Option<Gd<FluoriteCast>>> {
         let mut gdarray = Array::new();
         let mut tracked_iter = self.tracked_instances.iter();
@@ -167,11 +186,58 @@ impl FluoriteCastFactory {
         }
         gdarray
     }
+    /// Get the list of casts the factory is currently tracking. Returns in `HashSet` type.
+    pub fn get_tracked_casts_rs(&self) -> &HashSet<Gd<FluoriteCast>> {
+        &self.tracked_instances
+    }
+    /// Get the list of casts the factory is currently tracking (mutable). Returns in `HashSet` type.
+    pub fn get_tracked_casts_rs_mut(&mut self) -> &mut HashSet<Gd<FluoriteCast>> {
+        &mut self.tracked_instances
+    }
+    #[func]
+    /// Call `evaluate` on all casts that this factory is tracking.
+    pub fn evaluate_tracked_casts(&self, delta: f64) -> () {
+        let tracked = self.get_tracked_casts_rs();
+        for cast in tracked.iter() {
+            // FIXME: Causes double borrow when casts tries to emit a signal
+            cast.to_godot_owned().bind_mut().evaluate(delta, false);
+        }
+    }
 
     fn on_cast_freeing(&mut self, &this: Gd<FluoriteCast>) -> () {
         let taken = self.tracked_instances.remove(&this);
         if !taken {
             godot_warn!("Failed to remove node in tracked_instances: {}", this.to_string());
+        }
+    }
+}
+
+#[godot_api]
+impl INode3D for FluoriteCastFactory {
+    fn process(&mut self, delta: f64) -> () {
+        if self.orchestrates_evaluation {
+            let evaluate_mode = self
+                .projectile_config
+                .as_ref()
+                .expect("projectile_config should always exist")
+                .bind()
+                .evaluate_mode;
+            if let EvaluateMode::Process = evaluate_mode {
+                self.evaluate_tracked_casts(delta);
+            }
+        }
+    }
+    fn physics_process(&mut self, delta: f64) -> () {
+        if self.orchestrates_evaluation {
+            let evaluate_mode = self
+                .projectile_config
+                .as_ref()
+                .expect("projectile_config should always exist")
+                .bind()
+                .evaluate_mode;
+            if let EvaluateMode::PhysicsProcess = evaluate_mode {
+                self.evaluate_tracked_casts(delta);
+            }
         }
     }
 }
