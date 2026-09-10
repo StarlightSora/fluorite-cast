@@ -2,6 +2,8 @@
 
 *Ballistics Engine / Projectile Simulation for Godot 4, written in Rust*
 
+## Example
+
 ```gdscript
 extends Node3D
 # Our casts will carry an instance of this scene
@@ -80,3 +82,7 @@ Now run `cargo build`. The built dynamic library file should be generated in `ta
 You'll have to set up the `.gdextension` file as well for Godot to recognize the dynamic library file. This is explained in more detail in the [godot-rust book](https://godot-rust.github.io/book/intro/hello-world.html#wire-up-godot-with-rust).
 
 The `entry_symbol` of this library is `fluorite_cast`.
+
+# License
+
+This project is licensed under the MIT license.
