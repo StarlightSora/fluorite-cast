@@ -125,14 +125,12 @@ impl FluoriteCastFactory {
         // no, we are not making a decl macro to avoid breaking DRY
         let self_id = self.object_to_owned().instance_id();
         // this signal only fires if `orchestrates_evaluation` is false
+        // if this is fired when it is true, then this code will crash due to mutable borrow aliasing
         new_instance.signals().freeing().connect(move |this| {
             let maybe_self = Gd::<Self>::try_from_instance_id(self_id);
             let _  = maybe_self.map(|mut actually_self| {
                 //actually_self.signals().freeing().emit(&this); // is there ever a reason to propagate up the freeing signal??
-                let orchestrates_evaluation = actually_self.bind().orchestrates_evaluation;
-                if !orchestrates_evaluation {
-                    actually_self.bind_mut().on_cast_freeing(this);
-                }
+                actually_self.bind_mut().on_cast_freeing(this);
             }).is_err_and(|_| {
                 godot_warn!("Received freeing signal from a FluoriteCast instance, but the factory that instantiated it is already freed");
                 true
