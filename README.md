@@ -4,7 +4,26 @@
 ![docs](https://img.shields.io/docsrs/fluorite-cast)
 ![lstcmt](https://img.shields.io/github/last-commit/StarlightSora/fluorite-cast)
 
-*Ballistics Engine / Projectile Simulation for Godot 4, written in Rust*
+*Ballistics Engine / Projectile Casting Simulation for Godot 4, written in Rust*
+
+crates.io Disclaimer: This crate is designed for use in Godot (either as a precompiled binary or as a depdendency of a project using `godot-rust`). *It is not useful as-is!*
+
+## Why fluorite-cast?
+
+Sometimes we make games that need **ranged hit detection**. Like a *FPS game* for example. We can use raycasting (or shapecasting) to do this. But that is **hitscan**; projectiles travel from the origin to the target instantly. But what if we want **projectiles that have time to travel, and a proper trajectory?**
+
+We could leverage the **physics engine**. Simply "fire" a physics body by assigning velocity to it. But that has **other issues**: projectiles tunneling through objects (especially at high speeds), pushing objects (even if we don't want them to), overhead from unnecessary builtin features, missing features, etc. Some of these can be fixed either with configuration, and custom features bolted on with inheritance. But it can't fix everything.
+
+**What if we bypassed the physics engine entirely? This is what `fluorite-cast` does.** Each projectile (cast) is evaluated purely by raycasting (or shapecasting) forward every frame according to the cast's current velocity.
+
+**It is feature-rich, yet highly configurable to disable features you don't need**. There's support for cast penetration, basic aerodynamics, cast supersampling, and gravity affected by `Area2D`s. But if you don't need those bells and whistles, you can tune them down or turn them off. Don't need aerodynamic drag simulation? Just disable it. Want gravity, but don't need to care about `Area2D`s? Configure it to do just that. Don't need penetration? Turn it off.
+
+**Custom behavior can be injected easily**. Inheritance is not required. `FluoriteCastCfgMethods` allows us to inject a custom type that inherits `Resource`. This type can have methods attached, and casts can call those methods as callbacks. These can be used to provide custom logic for determining if a hit object should penetrate or not for example, or doing some custom behavior every time a cast evaluates itself. **You don't need to know Rust to do this, GDScript callables are compatible!** Besides callbacks, you can **listen to signals to do things when a cast penetrates or terminates**.
+
+It is also **very performant\***. Because the library is written in Rust, a compiled language, it can run much faster than GDScript-based implementations. With all features turned on in the configuration, 300 concurrent casts barely impacts performance. **With the default configuration, even 1000 concurrent casts run just fine**. And remember, you don't need to know Rust to use the library, it's just that the library is written in it.
+
+<sup>*Assuming it was compiled as `cargo build --release`. Debug builds have suboptimal performance (around 50x slower with no optimizations).</sup>
+
 
 ## Example
 
@@ -50,6 +69,10 @@ func _on_factory_cast_terminated(cast_instance: FluoriteCast, cast_result: Fluor
 	print(cast_instance.name, " has terminated! Collider: ", cast_result.collider.name)
 ```
 
+## Features
+
+WIP
+
 ## Installation
 
 ### From Precompiled Binary (Recommended)
@@ -66,7 +89,7 @@ Note that only Windows and Linux binaries are provided at the moment. If you nee
 
 This is recommended if you already have a project using `godot-rust`, or want to use the Rust-only features of this library for extra performance.
 
-Run `cargo add fluorite-cast` in your root crate. *(TODO: We don't have a crates.io release yet)*
+Run `cargo add fluorite-cast` in your root crate.
 
 Or alternatively, `git clone` this repository in your root crate, then edit your `Cargo.toml`'s `[dependencies]` section so it has this line:
 
@@ -103,6 +126,10 @@ You'll have to set up the `.gdextension` file as well for Godot to recognize the
 
 The `entry_symbol` of this library is `fluorite_cast`.
 
-# License
+## Documentation
+
+Please refer to the documentation on [docs.rs](https://docs.rs/hooke-spring). Although the documentation is for Rust usage, it is still very relevant for GDScript usage.
+
+## License
 
 This project is licensed under the MIT license.

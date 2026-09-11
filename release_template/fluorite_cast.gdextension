@@ -4,11 +4,11 @@ compatibility_minimum = 4.1
 reloadable = true
 
 [libraries]
-linux.debug.x86_64 =     "res://addons/fluorite-cast/fluorite_cast.so"
-linux.release.x86_64 =   "res://addons/fluorite-cast/fluorite_cast.so"
+linux.debug.x86_64 =     "res://addons/fluorite-cast/libfluorite_cast.so"
+linux.release.x86_64 =   "res://addons/fluorite-cast/libfluorite_cast.so"
 windows.debug.x86_64 =   "res://addons/fluorite-cast/fluorite_cast.dll"
 windows.release.x86_64 = "res://addons/fluorite-cast/fluorite_cast.dll"
-macos.debug =            "res://addons/fluorite-cast/fluorite_cast.dylib"
-macos.release =          "res://addons/fluorite-cast/fluorite_cast.dylib"
-macos.debug.arm64 =      "res://addons/fluorite-cast/fluorite_cast.dylib"
-macos.release.arm64 =    "res://addons/fluorite-cast/fluorite_cast.dylib"
+macos.debug =            "res://addons/fluorite-cast/libfluorite_cast.dylib"
+macos.release =          "res://addons/fluorite-cast/libfluorite_cast.dylib"
+macos.debug.arm64 =      "res://addons/fluorite-cast/libfluorite_cast.dylib"
+macos.release.arm64 =    "res://addons/fluorite-cast/libfluorite_cast.dylib"
