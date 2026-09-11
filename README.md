@@ -74,7 +74,7 @@ func _on_factory_cast_terminated(cast_instance: FluoriteCast, cast_result: Fluor
 
 - A **factory type** `FluoriteCastFactory` that once constructed with configurations, can instantiate new `FluoriteCast`s with `fire_cast` calls, and forwards all signals emitted by casts it constructed
 
-- **Callbacks** that can run when projectiles attempt to penetrate an object (`try_penetrate`), every time they get evaluated (`cast_raw_evaluated`), and right before they finish being instantiate (`on_new_cast`)
+- **Custom callbacks** that can run when projectiles attempt to penetrate an object (`try_penetrate`), every time they get evaluated (`cast_raw_evaluated`), and right before they finish being instantiate (`on_new_cast`)
 
 - **Signals** that fire when a cast penetrates (`penetrated`), terminates (`terminated`) and expires (`expired`)
 
