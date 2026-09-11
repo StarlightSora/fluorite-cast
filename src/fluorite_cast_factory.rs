@@ -192,10 +192,6 @@ impl FluoriteCastFactory {
     pub fn get_tracked_casts_rs(&self) -> &HashSet<Gd<FluoriteCast>> {
         &self.tracked_instances
     }
-    /// Get the list of casts the factory is currently tracking (mutable). Returns in `HashSet` type.
-    pub fn get_tracked_casts_rs_mut(&mut self) -> &mut HashSet<Gd<FluoriteCast>> {
-        &mut self.tracked_instances
-    }
     #[func]
     /// Call `evaluate` on all casts that this factory is tracking.
     pub fn evaluate_tracked_casts(&mut self, delta: f64) -> () {
