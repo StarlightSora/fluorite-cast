@@ -4,15 +4,6 @@ use hashbrown::HashSet;
 use super::{fluorite_cast_config::EvaluateMode, prelude::*};
 
 #[derive(GodotClass)]
-#[class(init, base=Resource)]
-pub struct FluoriteCastFactoryConfig {
-    base: Base<Resource>,
-    #[export]
-    #[init(val = true)]
-    pub centralize_evaluations: bool
-}
-
-#[derive(GodotClass)]
 #[class(init, base=Node3D)]
 /// A factory type that instantiates and keeps track of `FluoriteCast`s.
 pub struct FluoriteCastFactory {
@@ -45,6 +36,7 @@ pub struct FluoriteCastFactory {
     /// 
     /// Note that it is a logical error if a `config_override` you passed in a `fire_cast` call
     /// has a different `evaluate_mode` setting than the factory's `projectile_config` with this setting enabled.
+    /// This may cause erratic behavior and panics.
     pub orchestrates_evaluation: bool, // Possibly used for multithreading support in the future
 }
 
