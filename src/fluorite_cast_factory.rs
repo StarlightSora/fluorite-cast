@@ -31,12 +31,14 @@ pub struct FluoriteCastFactory {
     /// If this invariant is broken, the cast will panic.
     pub global_fluid: Option<Gd<FluoriteFluidConfig>>,
     #[export]
-    /// If true, all casts that this factory instantiates will never autonomously call `evaluate`.
+    /// If `true`, all casts that this factory instantiates will never autonomously call `evaluate`.
     /// Instead, the factory will call `evaluate` on all tracked casts at once every `process` or `physics_process`.
     /// 
-    /// Note that it is a logical error if a `config_override` you passed in a `fire_cast` call
+    /// **Note: if this is `true`, then the factory must be present in the scene tree**, or else automatic evaluation calls cannot be made!
+    /// 
+    /// Warning: it is a logical error if a `config_override` you passed in a `fire_cast` call
     /// has a different `evaluate_mode` setting than the factory's `projectile_config` with this setting enabled.
-    /// This may cause erratic behavior and panics.
+    /// If this happens, this may cause erratic behavior and panics.
     pub orchestrates_evaluation: bool, // Possibly used for multithreading support in the future
 }
 

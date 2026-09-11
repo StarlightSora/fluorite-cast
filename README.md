@@ -10,20 +10,11 @@ crates.io Disclaimer: This crate is designed for use in Godot (either as a preco
 
 ## Why fluorite-cast?
 
-Sometimes we make games that need **ranged hit detection**. Like a *FPS game* for example. We can use raycasting (or shapecasting) to do this. But that is **hitscan**; projectiles travel from the origin to the target instantly. But what if we want **projectiles that have time to travel, and a proper trajectory?**
+Sometimes we make games that need **ranged hit detection**. Like a *FPS game* for example. We can use raycasting (or shapecasting) to do this. But that is **hitscan**; projectiles travel from the origin to the target instantly. But what if we want **projectiles that take time to travel, and a proper trajectory?**
 
-We could leverage the **physics engine**. Simply "fire" a physics body by assigning velocity to it. But that has **other issues**: projectiles tunneling through objects (especially at high speeds), pushing objects (even if we don't want them to), overhead from unnecessary builtin features, missing features, etc. Some of these can be fixed either with configuration, and custom features bolted on with inheritance. But it can't fix everything.
+Using physics bodies can work, but it's not good enough if we need reliable and performant projectiles. **`fluorite-cast` sidesteps the physics engine, using casting and mathematical evaluations per frame for reliability and performance.**
 
-**What if we bypassed the physics engine entirely? This is what `fluorite-cast` does.** Each projectile (cast) is evaluated purely by raycasting (or shapecasting) forward every frame according to the cast's current velocity.
-
-**It is feature-rich, yet highly configurable to disable features you don't need**. There's support for cast penetration, basic aerodynamics, cast supersampling, and gravity affected by `Area2D`s. But if you don't need those bells and whistles, you can tune them down or turn them off. Don't need aerodynamic drag simulation? Just disable it. Want gravity, but don't need to care about `Area2D`s? Configure it to do just that. Don't need penetration? Turn it off.
-
-**Custom behavior can be injected easily**. Inheritance is not required. `FluoriteCastCfgMethods` allows us to inject a custom type that inherits `Resource`. This type can have methods attached, and casts can call those methods as callbacks. These can be used to provide custom logic for determining if a hit object should penetrate or not for example, or doing some custom behavior every time a cast evaluates itself. **You don't need to know Rust to do this, GDScript callables are compatible!** Besides callbacks, you can **listen to signals to do things when a cast penetrates or terminates**.
-
-It is also **very performant\***. Because the library is written in Rust, a compiled language, it can run much faster than GDScript-based implementations. With all features turned on in the configuration, 300 concurrent casts barely impacts performance. **With the default configuration, even 1000 concurrent casts run just fine**. And remember, you don't need to know Rust to use the library, it's just that the library is written in it.
-
-<sup>*Assuming it was compiled as `cargo build --release`. Debug builds have suboptimal performance (around 50x slower with no optimizations).</sup>
-
+For more information please see the Features section.
 
 ## Example
 
@@ -71,7 +62,35 @@ func _on_factory_cast_terminated(cast_instance: FluoriteCast, cast_result: Fluor
 
 ## Features
 
-WIP
+**Most features can be tuned down or turned off to suit your needs and to improve performance!**
+
+- `FluoriteCast` Supports both **raycast** and **shapecast**-based casts (projectiles)
+
+- `Area3D`s can influence **gravitational acceleration** on casts
+
+- Casts can experience **drag** with fluid dynamics approximation, with `FluoriteFluidArea3D`s being able to override the global fluid
+
+- **Supersampling** settings lets casts evaluate at higher precision
+
+- A **factory type** `FluoriteCastFactory` that once constructed with configurations, can instantiate new `FluoriteCast`s with `fire_cast` calls, and forwards all signals emitted by casts it constructed
+
+- **Callbacks** that can run when projectiles attempt to penetrate an object (`try_penetrate`), every time they get evaluated (`cast_raw_evaluated`), and right before they finish being instantiate (`on_new_cast`)
+
+- **Signals** that fire when a cast penetrates (`penetrated`), terminates (`terminated`) and expires (`expired`)
+
+- `FluoriteCast` extends `Node3D`, so it will **not unexpectedly push physics objects around!**
+
+- Being written in Rust, a compiled systems programming language, it is **very performant**\*, with 1000+ casts with default configurations being simulated at once still keeping the game over 60FPS
+
+- **No Rust knowledge is necessary**, all the features are still within reach of GDScript!
+
+- ...But if you *do* use `godot-rust`, you can use the library with Rust code, with access to Rust-optimized methods for extra performance!
+
+<sup>*Assuming it was compiled as `cargo build --release`. Debug builds have suboptimal performance (around 50x slower with no optimizations).</sup>
+
+## Documentation
+
+Please refer to the documentation on [docs.rs](https://docs.rs/fluorite-cast). Although the documentation is for Rust, it is still very relevant for GDScript usage.
 
 ## Installation
 
@@ -125,10 +144,6 @@ Now run `cargo build`. The built dynamic library file should be generated in `ta
 You'll have to set up the `.gdextension` file as well for Godot to recognize the dynamic library file. This is explained in more detail in the [godot-rust book](https://godot-rust.github.io/book/intro/hello-world.html#wire-up-godot-with-rust).
 
 The `entry_symbol` of this library is `fluorite_cast`.
-
-## Documentation
-
-Please refer to the documentation on [docs.rs](https://docs.rs/hooke-spring). Although the documentation is for Rust usage, it is still very relevant for GDScript usage.
 
 ## License
 
