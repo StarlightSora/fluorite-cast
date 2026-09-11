@@ -20,4 +20,3 @@ pub use fluorite_cast_config::FluoriteCastCfgMethods;
 pub use fluorite_cast_config::FluoriteCastConfig;
 
 pub use super::fluorite_cast_factory::FluoriteCastFactory;
-pub use super::fluorite_cast_factory::FluoriteCastFactoryConfig;
