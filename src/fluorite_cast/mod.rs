@@ -207,6 +207,9 @@ impl FluoriteCast {
     pub fn expired(this: Gd<FluoriteCast>);
     #[signal]
     /// Fired when the projectile is about to be freed.
+    /// 
+    /// Note that this signal does not fire if a factory is orchestrating it.
+    /// The factory will autonomously take care of freeing casts.
     pub fn freeing(this: Gd<FluoriteCast>);
 
     #[func]
@@ -837,8 +840,10 @@ impl FluoriteCast {
     pub fn cleanup(&mut self) -> () {
         if self.is_cleaning_up { return }
         self.is_cleaning_up = true;
-        let self_clo = self.object_to_owned();
-        self.signals().freeing().emit(&self_clo);
+        if !self.ignore_internal_evaluate_calls {
+            let self_clo = self.object_to_owned();
+            self.signals().freeing().emit(&self_clo);
+        }
         self.base_mut().queue_free();
     }
     #[func]

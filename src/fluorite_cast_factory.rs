@@ -124,11 +124,15 @@ impl FluoriteCastFactory {
 
         // no, we are not making a decl macro to avoid breaking DRY
         let self_id = self.object_to_owned().instance_id();
+        // this signal only fires if `orchestrates_evaluation` is false
         new_instance.signals().freeing().connect(move |this| {
             let maybe_self = Gd::<Self>::try_from_instance_id(self_id);
             let _  = maybe_self.map(|mut actually_self| {
                 //actually_self.signals().freeing().emit(&this); // is there ever a reason to propagate up the freeing signal??
-                actually_self.bind_mut().on_cast_freeing(this);
+                let orchestrates_evaluation = actually_self.bind().orchestrates_evaluation;
+                if !orchestrates_evaluation {
+                    actually_self.bind_mut().on_cast_freeing(this);
+                }
             }).is_err_and(|_| {
                 godot_warn!("Received freeing signal from a FluoriteCast instance, but the factory that instantiated it is already freed");
                 true
@@ -196,11 +200,21 @@ impl FluoriteCastFactory {
     }
     #[func]
     /// Call `evaluate` on all casts that this factory is tracking.
-    pub fn evaluate_tracked_casts(&self, delta: f64) -> () {
+    pub fn evaluate_tracked_casts(&mut self, delta: f64) -> () {
         let tracked = self.get_tracked_casts_rs();
+        let mut to_free = Vec::new();
         for cast in tracked.iter() {
-            // FIXME: Causes double borrow when casts tries to emit a signal
-            cast.to_godot_owned().bind_mut().evaluate(delta, false);
+            let mut cast_owned = cast.to_godot_owned();
+            cast_owned.bind_mut().evaluate(delta, false);
+            if cast_owned.bind().is_scheduled_free() {
+                to_free.push(cast.clone());
+            }
+        }
+        for cast in to_free.iter() {
+            let is_scheduled_free = cast.bind().is_scheduled_free();
+            if is_scheduled_free {
+                self.on_cast_freeing(cast.clone());
+            }
         }
     }
 
