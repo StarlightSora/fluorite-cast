@@ -205,10 +205,7 @@ impl FluoriteCastFactory {
             }
         }
         for cast in to_free.iter() {
-            let is_scheduled_free = cast.bind().is_scheduled_free();
-            if is_scheduled_free {
-                self.on_cast_freeing(cast.clone());
-            }
+            self.on_cast_freeing(cast.clone());
         }
     }
 
