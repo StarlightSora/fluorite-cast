@@ -1,5 +1,9 @@
 # fluorite-cast
 
+![crates_io](https://img.shields.io/crates/v/fluorite-cast)
+![docs](https://img.shields.io/docsrs/fluorite-cast)
+![lstcmt](https://img.shields.io/github/last-commit/StarlightSora/fluorite-cast)
+
 *Ballistics Engine / Projectile Simulation for Godot 4, written in Rust*
 
 ## Example
@@ -17,14 +21,18 @@ extends Node3D
 		self, # Casts will be parented to this node
 		payload_scene, # Casts will carry this as the payload (nullable)
 		cast_cfg, # Casts will behave like this
-		global_fluid_cfg # The global air is configured like this
+		global_fluid_cfg, # The global air is configured like this
+		true, # The factory will orchestrate `evaluate` calls for each cast made
 	)
 # We have a looping, autostarted timer as a child of this node
 @onready var timer = $Timer
 
 func _ready() -> void:
-	# Connect the signal from the timer to the _on_timer_timeout function
-	timer.connect("timeout", _on_timer_timeout)
+	self.add_child(factory)
+	# Connect the timeout signal from the timer to _on_timer_timeout
+	timer.timeout.connect(_on_timer_timeout)
+	# Connect the terminated signal from the factory to _on_factory_cast_terminated
+	factory.terminated.connect(_on_factory_cast_terminated)
 
 
 func _on_timer_timeout() -> void:
@@ -37,6 +45,9 @@ func _on_timer_timeout() -> void:
 	var velocity: Vector3 = speed*direction;
 	# We fire a cast on behalf of the factory
 	factory.fire_cast(origin, velocity, {}, null, null)
+
+func _on_factory_cast_terminated(cast_instance: FluoriteCast, cast_result: FluoriteSpaceCastResult) -> void:
+	print(cast_instance.name, " has terminated! Collider: ", cast_result.collider.name)
 ```
 
 ## Installation
