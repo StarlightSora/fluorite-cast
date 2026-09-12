@@ -10,6 +10,7 @@ keywords = ["gamedev", "godot", "projectile", "raycast"]
 categories = ["game-development", "mathematics"]
 exclude = [
     "examples/scenes",
+    "release_template"
 ]
 #publish = false # Suppress publishing during dev build
 
