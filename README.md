@@ -6,7 +6,7 @@
 
 *Ballistics Engine / Projectile Casting Simulation for Godot 4, written in Rust*
 
-crates.io Disclaimer: **This crate is designed for use in Godot** (either as a precompiled binary or as a depdendency of a project using `godot-rust`). *It is not useful as-is!*
+crates.io Disclaimer: **This crate is designed for use in Godot** (either as a precompiled binary or as a dependency of a project using `godot-rust`). *It is not useful as-is!*
 
 ## Why fluorite-cast?
 
