@@ -6,7 +6,7 @@
 
 *Ballistics Engine / Projectile Casting Simulation for Godot 4, written in Rust*
 
-crates.io Disclaimer: This crate is designed for use in Godot (either as a precompiled binary or as a depdendency of a project using `godot-rust`). *It is not useful as-is!*
+crates.io Disclaimer: **This crate is designed for use in Godot** (either as a precompiled binary or as a depdendency of a project using `godot-rust`). *It is not useful as-is!*
 
 ## Why fluorite-cast?
 
@@ -38,6 +38,7 @@ extends Node3D
 @onready var timer = $Timer
 
 func _ready() -> void:
+	# We add the factory node to the scene tree
 	self.add_child(factory)
 	# Connect the timeout signal from the timer to _on_timer_timeout
 	timer.timeout.connect(_on_timer_timeout)
@@ -80,17 +81,19 @@ func _on_factory_cast_terminated(cast_instance: FluoriteCast, cast_result: Fluor
 
 - `FluoriteCast` extends `Node3D`, so it will **not unexpectedly push physics objects around!**
 
-- Being written in Rust, a compiled systems programming language, it is **very performant**\*, with 1000+ casts with default configurations being simulated at once still keeping the game over 60FPS
+- Being purely written in Rust, a compiled systems programming language, it is **very performant**\*, with 1000+ casts with default configurations being simulated at once still keeping the game over 60FPS
 
 - **No Rust knowledge is necessary**, all the features are still within reach of GDScript!
 
-- ...But if you *do* use `godot-rust`, you can use the library with Rust code, with access to Rust-optimized methods for extra performance!
+- ...But if you *do* use [`godot-rust`](https://github.com/godot-rust/gdext), you can use the library with Rust code, with access to Rust-optimized methods for extra performance!
 
-<sup>*Assuming it was compiled as `cargo build --release`. Debug builds have suboptimal performance (around 50x slower with no optimizations).</sup>
+<sup>*Assuming it was compiled as `cargo build --release`. Debug builds have suboptimal performance (around 50x slower with no optimizations). All precompiled binaries are shipped as release builds.</sup>
 
 ## Documentation
 
 Please refer to the documentation on [docs.rs](https://docs.rs/fluorite-cast). Although the documentation is for Rust, it is still very relevant for GDScript usage.
+
+From 0.1.1, the releases in the [releases](https://github.com/StarlightSora/fluorite-cast/releases) page now also ship with documentations generated with `cargo doc --no-deps` if you need documentation offline. Once you downloaded and unzipped it, please navigate to `fluorite_cast/index.html` to view the documentation. Note that dependencies of this crate are undocumented in the offline release.
 
 ## Installation
 

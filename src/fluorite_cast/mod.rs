@@ -1,3 +1,5 @@
+//! Contains the core type of this library, `FluoriteCast`,
+//! alongside `FluoriteSpaceCastResult`, a type-safer way to represent cast results.
 pub mod builtins;
 
 // If you're unfamiliar with godot-rust:

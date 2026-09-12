@@ -1,3 +1,4 @@
+//! Contains `FluoriteFluidConfig`, a type used to represent the properties of a fluid.
 use godot::prelude::*;
 
 // We assume that the temperature and pressure are constants

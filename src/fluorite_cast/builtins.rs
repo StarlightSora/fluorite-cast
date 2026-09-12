@@ -1,3 +1,4 @@
+//! Contains types and methods related to builtin features.
 use godot::prelude::*;
 use hashbrown::HashMap;
 use core::any::Any;
@@ -5,6 +6,7 @@ use core::any::Any;
 use super::super::fluorite_cast_config::CollisionDetectionMode;
 use super::{FluoriteCast, FluoriteSpaceCastResult};
 
+/// The builtin state type. It will be assigned to `custom_config.get("__builtin")` if builtin features are used.
 pub struct FluoriteBuiltinState {
     pub current_penetrated_count: i64
 }

@@ -1,3 +1,9 @@
+//! Re-exports commonly used symbols when using this libary.
+//! 
+//! Declare this in your code to bring all the re-exports this module does into scope:
+//! ```
+//! use fluorite_cast::prelude::*;
+//! ```
 use super::fluorite_cast;
 use super::fluorite_cast_config;
 use super::fluorite_cast::builtins;

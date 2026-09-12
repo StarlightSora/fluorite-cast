@@ -1,3 +1,4 @@
+//! Contains `FluoriteFluidArea3D`, a type that can locally override the global fluid.
 use godot::{classes::Area3D, prelude::*};
 
 use super::fluorite_fluid_config::FluoriteFluidConfig;

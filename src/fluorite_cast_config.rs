@@ -1,3 +1,4 @@
+//! Contains types used to configure `FluoriteCast`.
 use godot::{classes::{Curve, Shape3D}, prelude::*};
 
 use super::fluorite_cast::{FluoriteCast, FluoriteSpaceCastResult};

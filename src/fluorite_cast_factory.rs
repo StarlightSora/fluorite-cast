@@ -1,3 +1,4 @@
+//! Contains `FluoriteCastFactory`, a factory type used to instantiate `FluoriteCast`s.
 use godot::{meta::conv::ObjectToOwned, prelude::*};
 
 use hashbrown::HashSet;

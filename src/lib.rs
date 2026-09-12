@@ -1,3 +1,5 @@
+//! This is the root module of this library.
+//! 
 //! To properly register the library in an existing project using godot-rust,
 //! remember to add this to your root crate's `lib.rs`:
 //! ```
