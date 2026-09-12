@@ -29,10 +29,10 @@ extends Node3D
 # This is our factory instance, which will make and fire casts
 @onready var factory: FluoriteCastFactory = FluoriteCastFactory.new_factory(
 		self, # Casts will be parented to this node
-		payload_scene, # Casts will carry this as the payload (nullable)
-		cast_cfg, # Casts will behave like this
 		global_fluid_cfg, # The global air is configured like this
-		true, # The factory will orchestrate `evaluate` calls for each cast made
+		2, # The factory will orchestrate `evaluate` calls for each cast made every `physics_process`
+		# (we can't use enums exported from Rust with their semantic names when calling functions, so we pass it as int)
+		payload_scene, # Casts will carry this as the payload (nullable)
 	)
 # We have a looping, autostarted timer as a child of this node
 @onready var timer = $Timer
@@ -55,7 +55,7 @@ func _on_timer_timeout() -> void:
 	# Our will have this velocity
 	var velocity: Vector3 = speed*direction;
 	# We fire a cast on behalf of the factory
-	factory.fire_cast(origin, velocity, {}, null, null)
+	factory.fire_cast(origin, velocity, cast_cfg, {}, null)
 
 func _on_factory_cast_terminated(cast_instance: FluoriteCast, cast_result: FluoriteSpaceCastResult) -> void:
 	print(cast_instance.name, " has terminated! Collider: ", cast_result.collider.name)
@@ -147,6 +147,14 @@ Now run `cargo build`. The built dynamic library file should be generated in `ta
 You'll have to set up the `.gdextension` file as well for Godot to recognize the dynamic library file. This is explained in more detail in the [godot-rust book](https://godot-rust.github.io/book/intro/hello-world.html#wire-up-godot-with-rust).
 
 The `entry_symbol` of this library is `fluorite_cast`.
+
+## Changelogs
+
+Note: The API is not fully stable until it is bumped to `1.0.0`, a minor version bump (`0.x.y -> 0.x+1.y`) may introduce breaking changes!
+
+- `0.2.0`: `FluoriteCastFactory`'s fields and constructor arguments changed to hand off the config resource to be injected per-cast to encourage end user scalability; having a default config in the factory proved to be cumbersome past demos
+
+- `0.1.1`: Initial crates.io release
 
 ## License
 

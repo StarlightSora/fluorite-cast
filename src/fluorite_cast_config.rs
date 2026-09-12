@@ -3,7 +3,7 @@ use godot::{classes::{Curve, Shape3D}, prelude::*};
 
 use super::fluorite_cast::{FluoriteCast, FluoriteSpaceCastResult};
 
-#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
+#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy, PartialEq)]
 #[godot(via = i64)]
 pub enum EvaluateMode {
     #[default]
@@ -15,7 +15,7 @@ pub enum EvaluateMode {
     Manual,
 }
 
-#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
+#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy, PartialEq)]
 #[godot(via = i64)]
 pub enum ProjectileLookBehavior {
     #[default]
@@ -25,7 +25,7 @@ pub enum ProjectileLookBehavior {
     Manual,
 }
 
-#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
+#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy, PartialEq)]
 #[godot(via = i64)]
 pub enum SuperSamplingMode {
     /// Never supersample.
@@ -39,7 +39,7 @@ pub enum SuperSamplingMode {
     IfAboveTargetDeltaOrTooLong,
 }
 
-#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
+#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy, PartialEq)]
 #[godot(via = i64)]
 pub enum GravityBehavior {
     /// Ignore all gravity.
@@ -53,7 +53,7 @@ pub enum GravityBehavior {
     UseCurrentGravityRealTime,
 }
 
-#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
+#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy, PartialEq)]
 #[godot(via = i64)]
 pub enum FluidDynamicsBehavior {
     /// Ignore all fluids.
@@ -67,7 +67,7 @@ pub enum FluidDynamicsBehavior {
     UseCurrentFluidRealTime,
 }
 
-#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
+#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy, PartialEq)]
 #[godot(via = i64)]
 pub enum FluidDynamicsFidelity {
     /// Do not simulate fluid dynamics at all.
@@ -89,7 +89,7 @@ pub enum FluidDynamicsFidelity {
     DragCoefficientAndMach,
 }
 
-#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
+#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy, PartialEq)]
 #[godot(via = i64)]
 pub enum CollisionDetectionMode {
     /// Do not check for collisions at all.
@@ -103,7 +103,7 @@ pub enum CollisionDetectionMode {
     ByShapecast,
 }
 
-#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
+#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy, PartialEq)]
 #[godot(via = i64)]
 pub enum AlwaysExecuteCodeVia {
     /// Use the associated FnMut assigned to the struct, panicking if not present.
@@ -123,7 +123,7 @@ pub enum AlwaysExecuteCodeVia {
     ViaMethodOnResourcePascalCase,
 }
 
-#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy)]
+#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy, PartialEq)]
 #[godot(via = i64)]
 pub enum MaybeExecuteCodeVia {
     /// Do not execute anything and always assume the default value in its place.

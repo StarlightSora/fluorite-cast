@@ -2,7 +2,23 @@
 use godot::{meta::conv::ObjectToOwned, prelude::*};
 
 use hashbrown::HashSet;
-use super::{fluorite_cast_config::EvaluateMode, prelude::*};
+
+use super::prelude::*;
+
+#[derive(GodotConvert, Var, Export, Default, Clone, Debug, Copy, PartialEq)]
+#[godot(via = i64)]
+pub enum FluoriteFactoryOrchestrationMode {
+    /// All instantiated casts will use the `evaluate_mode` config of themselves.
+    DoesNotOrchestrate,
+    /// All instantiated casts will be forced to not self-evaluate, managed by the factory.
+    /// You need to call `evaluate_tracked_casts` on the factory manually.
+    ForceManual,
+    #[default]
+    /// All instantiated casts will be forced to evaluate every `physics_process`, automatically managed by the factory.
+    EveryPhysicsProcess,
+    /// All instantiated casts will be forced to evaluate every `process`, automatically managed by the factory.
+    EveryProcess,
+}
 
 #[derive(GodotClass)]
 #[class(init, base=Node3D)]
@@ -17,30 +33,28 @@ pub struct FluoriteCastFactory {
     /// If this invariant is broken, the cast will panic.
     pub parent_to: Option<Gd<Node3D>>,
     #[export]
-    /// The scene to instantiate a payload from for every cast, if any.
-    pub payload_scene: Option<Gd<PackedScene>>,
-    #[export]
-    /// The config given to instantiated casts.
-    ///
-    /// **This field must always be `Some`** (non-`null`).
-    /// If this invariant is broken, the cast will panic.
-    pub projectile_config: Option<Gd<FluoriteCastConfig>>,
-    #[export]
-    /// The global fluid forwarded to instantiated casts.
+    /// The global fluid forwarded to instantiated casts. You should have a `FluoriteFluidConfig` resource
+    /// in your project, then assign it here in the editor or statically via code.
     ///
     /// **This field must always be `Some`** (non-`null`).
     /// If this invariant is broken, the cast will panic.
     pub global_fluid: Option<Gd<FluoriteFluidConfig>>,
     #[export]
-    /// If `true`, all casts that this factory instantiates will never autonomously call `evaluate`.
-    /// Instead, the factory will call `evaluate` on all tracked casts at once every `process` or `physics_process`.
+    /// The scene to instantiate a payload from for every cast by default, if any.
     /// 
-    /// **Note: if this is `true`, then the factory must be present in the scene tree**, or else automatic evaluation calls cannot be made!
+    /// This field is optional. If `None` (`null`), then casts will be not visible by default, but still run.
+    /// You can always override this whenever you instantiate a cast on behalf of this factory in the arguments of `fire_cast`.
+    pub default_payload_scene: Option<Gd<PackedScene>>,
+    #[export]
+    /// If not `DoesNotOrchestrate`, all casts that this factory instantiates will never autonomously call `evaluate`.
     /// 
-    /// Warning: it is a logical error if a `config_override` you passed in a `fire_cast` call
-    /// has a different `evaluate_mode` setting than the factory's `projectile_config` with this setting enabled.
-    /// If this happens, this may cause erratic behavior and panics.
-    pub orchestrates_evaluation: bool, // Possibly used for multithreading support in the future
+    /// Instead, the factory will call `evaluate` on all tracked casts at once every `process`
+    /// (if `EveryPhysicsProcess`) or `physics_process` (if `EveryProcess`).
+    /// 
+    /// If this is `ForceManual`, then `evaluate_tracked_casts` must be called manually on the factory.
+    /// 
+    /// **Note: if this is `EveryPhysicsProcess` or `EveryProcess`, then the factory must be present in the scene tree**, or else automatic evaluation calls cannot be made!
+    pub orchestrates_evaluation_as: FluoriteFactoryOrchestrationMode,
 }
 
 #[godot_api]
@@ -62,10 +76,9 @@ impl FluoriteCastFactory {
     /// Always use this instead of `FluoriteCastFactory.new()`.
     pub fn new_factory(
         parent_to: Gd<Node3D>,
-        payload_scene: Option<Gd<PackedScene>>,
-        projectile_config: Gd<FluoriteCastConfig>,
         global_fluid: Gd<FluoriteFluidConfig>,
-        orchestrates_evaluation: bool,
+        orchestrates_evaluation_as: FluoriteFactoryOrchestrationMode,
+        default_payload_scene: Option<Gd<PackedScene>>,
         // TODO: Instance pooling struct maybe?
     ) -> Gd<Self> {
         Gd::from_init_fn(|base| {
@@ -73,18 +86,14 @@ impl FluoriteCastFactory {
                 base,
                 tracked_instances: HashSet::new(),
                 parent_to: Some(parent_to),
-                payload_scene,
-                projectile_config: Some(projectile_config),
+                default_payload_scene,
                 global_fluid: Some(global_fluid),
-                orchestrates_evaluation,
+                orchestrates_evaluation_as,
             }
         })
     }
     #[func]
     /// Instantiate a cast and fire it.
-    /// 
-    /// If `config_override` is provided, the cast will use that config
-    /// instead of the config stored in the factory.
     /// 
     /// If `payload_override` is provided, the cast will use that node instead.
     /// Note that `payload_override` is a `Node3D`, not a `PackedScene`.
@@ -93,24 +102,22 @@ impl FluoriteCastFactory {
         &mut self,
         from: Transform3D,
         towards: Vector3,
+        with_config: Gd<FluoriteCastConfig>,
         custom_data: VarDictionary,
-        config_override: Option<Gd<FluoriteCastConfig>>,
         // if you are injecting a payload_override, it must be pre-instantiated, this is a conscious decision for allowing better control on the caller's side
         payload_override: Option<Gd<Node3D>>,
     ) -> Gd<FluoriteCast> {
         let mut new_instance = FluoriteCast::new_cast(
             self.parent_to.as_ref().expect("parent_to should exist").clone(),
             payload_override.map_or_else( // concise, but looks kind of ugly
-                || self.payload_scene.as_ref().map(|packed_scene| {
+                || self.default_payload_scene.as_ref().map(|packed_scene| {
                     packed_scene.try_instantiate_as().expect("payload_scene should always extend Node3D, if provided")
                 }
             ), |payload| Some(payload)),
-            config_override.unwrap_or_else(|| {
-                self.projectile_config.as_ref().expect("projectile_config should always exist").clone()
-            }),
+            with_config,
             self.global_fluid.as_ref().expect("global_fluid should always exist").clone(),
             custom_data,
-            self.orchestrates_evaluation,
+            if let FluoriteFactoryOrchestrationMode::DoesNotOrchestrate = self.orchestrates_evaluation_as {false} else {true},
         );
         let prev = self.tracked_instances.replace(new_instance.clone());
         prev.inspect(|x| {
@@ -215,29 +222,13 @@ impl FluoriteCastFactory {
 #[godot_api]
 impl INode3D for FluoriteCastFactory {
     fn process(&mut self, delta: f64) -> () {
-        if self.orchestrates_evaluation {
-            let evaluate_mode = self
-                .projectile_config
-                .as_ref()
-                .expect("projectile_config should always exist")
-                .bind()
-                .evaluate_mode;
-            if let EvaluateMode::Process = evaluate_mode {
-                self.evaluate_tracked_casts(delta);
-            }
+        if let FluoriteFactoryOrchestrationMode::EveryProcess = self.orchestrates_evaluation_as {
+            self.evaluate_tracked_casts(delta);
         }
     }
     fn physics_process(&mut self, delta: f64) -> () {
-        if self.orchestrates_evaluation {
-            let evaluate_mode = self
-                .projectile_config
-                .as_ref()
-                .expect("projectile_config should always exist")
-                .bind()
-                .evaluate_mode;
-            if let EvaluateMode::PhysicsProcess = evaluate_mode {
-                self.evaluate_tracked_casts(delta);
-            }
+        if let FluoriteFactoryOrchestrationMode::EveryPhysicsProcess = self.orchestrates_evaluation_as {
+            self.evaluate_tracked_casts(delta);
         }
     }
 }
