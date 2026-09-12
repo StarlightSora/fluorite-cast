@@ -3,10 +3,15 @@ name = "fluorite-cast"
 license = "MIT"
 version = "0.1.1"
 edition = "2024"
-#publish = false # Suppress publishing during dev build
+authors = ["StarlightSora"]
+description = "Ballistics Engine / Projectile Casting Simulation for Godot 4"
+repository = "https://github.com/StarlightSora/fluorite-cast"
+keywords = ["gamedev", "godot", "projectile", "raycast"]
+categories = ["game-development", "mathematics"]
 exclude = [
     "examples/scenes",
 ]
+#publish = false # Suppress publishing during dev build
 
 [features]
 
