@@ -4,6 +4,9 @@ license = "MIT"
 version = "0.1.1"
 edition = "2024"
 #publish = false # Suppress publishing during dev build
+exclude = [
+    "examples/scenes",
+]
 
 [features]
 
