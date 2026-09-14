@@ -138,8 +138,8 @@ Make sure you have [rustup](https://rustup.rs/) installed.
 
 ```toml
 ## Uncomment below two lines if building a standalone cdylib build
-#[lib]
-#crate-type = ["cdylib"]
+# [lib]
+# crate-type = ["cdylib"]
 ```
 
 Now run `cargo build`. The built dynamic library file should be generated in `target/debug/`.
@@ -151,6 +151,8 @@ The `entry_symbol` of this library is `fluorite_cast`.
 ## Changelogs
 
 Note: The API is not fully stable until it is bumped to `1.0.0`, a minor version bump (`0.x.y -> 0.x+1.y`) may introduce breaking changes!
+
+- `0.2.1`: `fire_cast` method of `FluoriteCastFactory` refactored and split into `make_cast` and `make_cast_and_fire`. Old method is soft deprecated
 
 - `0.2.0`: `FluoriteCastFactory`'s fields and constructor arguments changed to hand off the config resource to be injected per-cast to encourage end user scalability; having a default config in the factory proved to be cumbersome past demos
 
