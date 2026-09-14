@@ -24,4 +24,4 @@ rustc-ice-*.txt
 #.idea/
 
 release_template/releases
-license.html
+THIRD_PARTY_LICENSES.html
