@@ -1,0 +1,23 @@
+# Config file to generate a third party licences report for precompiled binary releases.
+# Use `cargo about generate about.hbs > license.html` to generate one.
+# Make sure to `cargo-about` is installed: `cargo install --locked --features cli cargo-about`
+
+accepted = [
+    "Apache-2.0",
+    "MIT",
+    "MPL-2.0",
+    "Zlib",
+    "Unicode-3.0",
+    # Strong copyleft (GPL/AGPL etc) will never be accepted
+]
+
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "x86_64-pc-windows-msvc",
+    "x86_64-apple-darwin",
+]
+
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+ignore-transitive-dependencies = false
