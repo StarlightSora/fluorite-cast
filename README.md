@@ -55,7 +55,7 @@ func _on_timer_timeout() -> void:
 	# Our will have this velocity
 	var velocity: Vector3 = speed*direction;
 	# We fire a cast on behalf of the factory
-	factory.fire_cast(origin, velocity, cast_cfg, {}, null)
+	factory.make_cast_and_fire(origin, velocity, cast_cfg, {}, null)
 
 func _on_factory_cast_terminated(cast_instance: FluoriteCast, cast_result: FluoriteSpaceCastResult) -> void:
 	print(cast_instance.name, " has terminated! Collider: ", cast_result.collider.name)
@@ -73,7 +73,7 @@ func _on_factory_cast_terminated(cast_instance: FluoriteCast, cast_result: Fluor
 
 - **Supersampling** settings lets casts evaluate at higher precision
 
-- A **factory type** `FluoriteCastFactory` that once constructed with configurations, can instantiate new `FluoriteCast`s with `fire_cast` calls, and forwards all signals emitted by casts it constructed
+- A **factory type** `FluoriteCastFactory` that once constructed with configurations, can instantiate new `FluoriteCast`s with `make_cast`/`make_cast_and_fire` calls, and forwards all signals emitted by casts it constructed
 
 - **Custom callbacks** that can run when projectiles attempt to penetrate an object (`try_penetrate`), every time they get evaluated (`cast_raw_evaluated`), and right before they finish being instantiate (`on_new_cast`)
 

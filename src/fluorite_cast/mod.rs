@@ -218,6 +218,8 @@ impl FluoriteCast {
     /// Constructs a new `FluoriteCast`.
     /// Always use this instead of `FluoriteCast.new()`.
     /// 
+    /// The resulting instance will start disabled. Call `fire` or `unfreeze` on the instance to enable it.
+    /// 
     /// Unless you're explicitly making an ad-hoc cast, prefer casting on behalf of `FluoriteCastFactory` instead.
     pub fn new_cast(
         &mut parent_to: Gd<Node3D>,
@@ -242,7 +244,7 @@ impl FluoriteCast {
                 alive_for: 0.0f64,
                 global_fluid: Some(global_fluid),
                 custom_data,
-                disabled: false,
+                disabled: true,
                 is_cleaning_up: false,
                 query_params_cache_ray: None,
                 query_params_cache_shape: None,
@@ -517,6 +519,16 @@ impl FluoriteCast {
         self.disabled
     }
     #[func]
+    /// Make the cast be disabled - that is, it will ignore any `evaluate` calls.
+    pub fn freeze(&mut self) -> () {
+        self.disabled = true;
+    }
+    #[func]
+    /// Make the cast be not disabled - that is, it will respect any `evaluate` calls.
+    pub fn unfreeze(&mut self) -> () {
+        self.disabled = false;
+    }
+    #[func]
     /// Check if this cast is being cleaned up and will be freed.
     pub fn is_scheduled_free(&self) -> bool {
         self.is_cleaning_up
@@ -527,6 +539,7 @@ impl FluoriteCast {
     /// Unless you're explicitly making an ad-hoc cast, there is not much reason to call this.
     /// Prefer casting on behalf of `FluoriteCastFactory` instead.
     pub fn fire(&mut self, global_origin: Transform3D, direction: Vector3) -> () {
+        self.disabled = false;
         self.base_mut().set_global_transform(global_origin);
         self.add_velocity(direction);
     }

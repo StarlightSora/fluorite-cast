@@ -93,21 +93,23 @@ impl FluoriteCastFactory {
         })
     }
     #[func]
-    /// Instantiate a cast and fire it.
+    /// Instantiate a cast. You will need to call `fire` on the returned instance to fire it yourself.
+    /// 
+    /// Note that if `fire` or `unfreeze` is never called on the instance, it will be alive indefinitely.
+    /// If you do custom logic on the instance before it is `fire`d, make sure the logic is either infallible,
+    /// or calls `fire`/`unfreeze`/`cleanup` on the instance if the logic throws. 
     /// 
     /// If `payload_override` is provided, the cast will use that node instead.
     /// Note that `payload_override` is a `Node3D`, not a `PackedScene`.
     /// If you need to pass a `PackedScene`, instantiate it in the call site first.
-    pub fn fire_cast(
+    pub fn make_cast(
         &mut self,
-        from: Transform3D,
-        towards: Vector3,
         with_config: Gd<FluoriteCastConfig>,
         custom_data: VarDictionary,
         // if you are injecting a payload_override, it must be pre-instantiated, this is a conscious decision for allowing better control on the caller's side
         payload_override: Option<Gd<Node3D>>,
     ) -> Gd<FluoriteCast> {
-        let mut new_instance = FluoriteCast::new_cast(
+        let new_instance = FluoriteCast::new_cast(
             self.parent_to.as_ref().expect("parent_to should exist").clone(),
             payload_override.map_or_else( // concise, but looks kind of ugly
                 || self.default_payload_scene.as_ref().map(|packed_scene| {
@@ -168,9 +170,41 @@ impl FluoriteCastFactory {
                 true
             });
         });
-        
+
+        new_instance
+    }
+    #[func]
+    /// Instantiate a cast and immediately fire it.
+    /// 
+    /// If you need to do some custom logic to the instance before it is fired,
+    /// use `make_cast` then call `fire` on the resulting instance seperately instead.
+    /// 
+    /// If `payload_override` is provided, the cast will use that node instead.
+    /// Note that `payload_override` is a `Node3D`, not a `PackedScene`.
+    /// If you need to pass a `PackedScene`, instantiate it in the call site first.
+    pub fn make_cast_and_fire(
+        &mut self,
+        from: Transform3D,
+        towards: Vector3,
+        with_config: Gd<FluoriteCastConfig>,
+        custom_data: VarDictionary,
+        payload_override: Option<Gd<Node3D>>,
+    ) -> Gd<FluoriteCast> {
+        let mut new_instance = self.make_cast(with_config, custom_data, payload_override);
         new_instance.bind_mut().fire(from, towards);
         new_instance
+    }
+    #[func]
+    /// **Deprecated.**
+    pub fn fire_cast(
+        &mut self,
+        from: Transform3D,
+        towards: Vector3,
+        with_config: Gd<FluoriteCastConfig>,
+        custom_data: VarDictionary,
+        payload_override: Option<Gd<Node3D>>,
+    ) -> Gd<FluoriteCast> {
+        self.make_cast_and_fire(from, towards, with_config, custom_data, payload_override)
     }
     #[func]
     /// Check if this factory is tracking the given cast.
