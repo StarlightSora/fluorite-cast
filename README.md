@@ -77,7 +77,7 @@ func _on_factory_cast_terminated(cast_instance: FluoriteCast, cast_result: Fluor
 
 - **Custom callbacks** that can run when projectiles attempt to penetrate an object (`try_penetrate`), every time they get evaluated (`cast_raw_evaluated`), and right before they finish being instantiate (`on_new_cast`)
 
-- **Signals** that fire when a cast penetrates (`penetrated`), terminates (`terminated`) and expires (`expired`)
+- **Signals** that fire when a cast penetrates (`penetrated`), terminates (`terminated`), expires (`expired`), and about to be freed (`freeing`)
 
 - `FluoriteCast` extends `Node3D`, so it will **not unexpectedly push physics objects around!**
 
@@ -151,6 +151,8 @@ The `entry_symbol` of this library is `fluorite_cast`.
 ## Changelogs
 
 Note: The API is not fully stable until it is bumped to `1.0.0`, a minor version bump (`0.x.y -> 0.x+1.y`) may introduce breaking changes!
+
+- `0.2.2`: Added `freeing` signal to `FluoriteCastFactory`
 
 - `0.2.1`: `fire_cast` method of `FluoriteCastFactory` refactored and split into `make_cast` and `make_cast_and_fire`. Old method is soft deprecated
 

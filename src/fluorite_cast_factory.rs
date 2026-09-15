@@ -59,8 +59,9 @@ pub struct FluoriteCastFactory {
 
 #[godot_api]
 impl FluoriteCastFactory {
-    //#[signal]
-    //pub fn freeing(this: Gd<FluoriteCast>);
+    #[signal]
+    /// Fired when an instantiated cast is about to be freed.
+    pub fn freeing(this: Gd<FluoriteCast>);
     #[signal]
     /// Fired when an instantiated cast expires.
     pub fn expired(this: Gd<FluoriteCast>);
@@ -133,7 +134,6 @@ impl FluoriteCastFactory {
         new_instance.signals().freeing().connect(move |this| {
             let maybe_self = Gd::<Self>::try_from_instance_id(self_id);
             let _  = maybe_self.map(|mut actually_self| {
-                //actually_self.signals().freeing().emit(&this); // is there ever a reason to propagate up the freeing signal??
                 actually_self.bind_mut().on_cast_freeing(this);
             }).is_err_and(|_| {
                 godot_warn!("Received freeing signal from a FluoriteCast instance, but the factory that instantiated it is already freed");
@@ -195,7 +195,8 @@ impl FluoriteCastFactory {
         new_instance
     }
     #[func]
-    /// **Deprecated.**
+    // cannot mark this as deprecated with proc macro or else the above proc macro warns (????)
+    /// **Deprecated.** Use `make_cast_and_fire` instead!
     pub fn fire_cast(
         &mut self,
         from: Transform3D,
@@ -249,6 +250,8 @@ impl FluoriteCastFactory {
         let taken = self.tracked_instances.remove(&this);
         if !taken {
             godot_warn!("Failed to remove node in tracked_instances: {}", this.to_string());
+        } else {
+            self.signals().freeing().emit(&this);
         }
     }
 }
