@@ -17,6 +17,7 @@ exclude = [
 #publish = false # Suppress publishing during dev build
 
 [features]
+standalone_cdylib = []
 
 [dependencies]
 godot = { version = "0.5", features = ["upcoming-editor-placeholders"] }

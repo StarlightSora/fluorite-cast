@@ -28,7 +28,7 @@ pub struct FluoriteCastFactory {
     tracked_instances: HashSet<Gd<FluoriteCast>>,
     #[export]
     /// All instantiated casts will be parented to this node.
-    /// 
+    ///
     /// **This field must always be `Some`** (non-`null`).
     /// If this invariant is broken, the cast will panic.
     pub parent_to: Option<Gd<Node3D>>,
@@ -41,18 +41,18 @@ pub struct FluoriteCastFactory {
     pub global_fluid: Option<Gd<FluoriteFluidConfig>>,
     #[export]
     /// The scene to instantiate a payload from for every cast by default, if any.
-    /// 
+    ///
     /// This field is optional. If `None` (`null`), then casts will be not visible by default, but still run.
     /// You can always override this whenever you instantiate a cast on behalf of this factory in the arguments of `fire_cast`.
     pub default_payload_scene: Option<Gd<PackedScene>>,
     #[export]
     /// If not `DoesNotOrchestrate`, all casts that this factory instantiates will never autonomously call `evaluate`.
-    /// 
+    ///
     /// Instead, the factory will call `evaluate` on all tracked casts at once every `process`
     /// (if `EveryPhysicsProcess`) or `physics_process` (if `EveryProcess`).
-    /// 
+    ///
     /// If this is `ForceManual`, then `evaluate_tracked_casts` must be called manually on the factory.
-    /// 
+    ///
     /// **Note: if this is `EveryPhysicsProcess` or `EveryProcess`, then the factory must be present in the scene tree**, or else automatic evaluation calls cannot be made!
     pub orchestrates_evaluation_as: FluoriteFactoryOrchestrationMode,
 }
@@ -82,24 +82,22 @@ impl FluoriteCastFactory {
         default_payload_scene: Option<Gd<PackedScene>>,
         // TODO: Instance pooling struct maybe?
     ) -> Gd<Self> {
-        Gd::from_init_fn(|base| {
-            Self {
-                base,
-                tracked_instances: HashSet::new(),
-                parent_to: Some(parent_to),
-                default_payload_scene,
-                global_fluid: Some(global_fluid),
-                orchestrates_evaluation_as,
-            }
+        Gd::from_init_fn(|base| Self {
+            base,
+            tracked_instances: HashSet::new(),
+            parent_to: Some(parent_to),
+            default_payload_scene,
+            global_fluid: Some(global_fluid),
+            orchestrates_evaluation_as,
         })
     }
     #[func]
     /// Instantiate a cast. You will need to call `fire` on the returned instance to fire it yourself.
-    /// 
+    ///
     /// Note that if `fire` or `unfreeze` is never called on the instance, it will be alive indefinitely.
     /// If you do custom logic on the instance before it is `fire`d, make sure the logic is either infallible,
-    /// or calls `fire`/`unfreeze`/`cleanup` on the instance if the logic throws. 
-    /// 
+    /// or calls `fire`/`unfreeze`/`cleanup` on the instance if the logic throws.
+    ///
     /// If `payload_override` is provided, the cast will use that node instead.
     /// Note that `payload_override` is a `Node3D`, not a `PackedScene`.
     /// If you need to pass a `PackedScene`, instantiate it in the call site first.
@@ -111,20 +109,41 @@ impl FluoriteCastFactory {
         payload_override: Option<Gd<Node3D>>,
     ) -> Gd<FluoriteCast> {
         let new_instance = FluoriteCast::new_cast(
-            self.parent_to.as_ref().expect("parent_to should exist").clone(),
-            payload_override.map_or_else( // concise, but looks kind of ugly
-                || self.default_payload_scene.as_ref().map(|packed_scene| {
-                    packed_scene.try_instantiate_as().expect("payload_scene should always extend Node3D, if provided")
-                }
-            ), |payload| Some(payload)),
+            self.parent_to
+                .as_ref()
+                .expect("parent_to should exist")
+                .clone(),
+            payload_override.map_or_else(
+                // concise, but looks kind of ugly
+                || {
+                    self.default_payload_scene.as_ref().map(|packed_scene| {
+                        packed_scene
+                            .try_instantiate_as()
+                            .expect("payload_scene should always extend Node3D, if provided")
+                    })
+                },
+                |payload| Some(payload),
+            ),
             with_config,
-            self.global_fluid.as_ref().expect("global_fluid should always exist").clone(),
+            self.global_fluid
+                .as_ref()
+                .expect("global_fluid should always exist")
+                .clone(),
             custom_data,
-            if let FluoriteFactoryOrchestrationMode::DoesNotOrchestrate = self.orchestrates_evaluation_as {false} else {true},
+            if let FluoriteFactoryOrchestrationMode::DoesNotOrchestrate =
+                self.orchestrates_evaluation_as
+            {
+                false
+            } else {
+                true
+            },
         );
         let prev = self.tracked_instances.replace(new_instance.clone());
         prev.inspect(|x| {
-            godot_warn!("tracked_instances was already occupied with node: {}", x.to_string())
+            godot_warn!(
+                "tracked_instances was already occupied with node: {}",
+                x.to_string()
+            );
         });
 
         // no, we are not making a decl macro to avoid breaking DRY
@@ -175,10 +194,10 @@ impl FluoriteCastFactory {
     }
     #[func]
     /// Instantiate a cast and immediately fire it.
-    /// 
+    ///
     /// If you need to do some custom logic to the instance before it is fired,
     /// use `make_cast` then call `fire` on the resulting instance seperately instead.
-    /// 
+    ///
     /// If `payload_override` is provided, the cast will use that node instead.
     /// Note that `payload_override` is a `Node3D`, not a `PackedScene`.
     /// If you need to pass a `PackedScene`, instantiate it in the call site first.
@@ -249,7 +268,10 @@ impl FluoriteCastFactory {
     fn on_cast_freeing(&mut self, &this: Gd<FluoriteCast>) -> () {
         let taken = self.tracked_instances.remove(&this);
         if !taken {
-            godot_warn!("Failed to remove node in tracked_instances: {}", this.to_string());
+            godot_warn!(
+                "Failed to remove node in tracked_instances: {}",
+                this.to_string()
+            );
         } else {
             self.signals().freeing().emit(&this);
         }
@@ -264,7 +286,9 @@ impl INode3D for FluoriteCastFactory {
         }
     }
     fn physics_process(&mut self, delta: f64) -> () {
-        if let FluoriteFactoryOrchestrationMode::EveryPhysicsProcess = self.orchestrates_evaluation_as {
+        if let FluoriteFactoryOrchestrationMode::EveryPhysicsProcess =
+            self.orchestrates_evaluation_as
+        {
             self.evaluate_tracked_casts(delta);
         }
     }
