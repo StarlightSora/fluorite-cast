@@ -142,7 +142,7 @@ Make sure you have [rustup](https://rustup.rs/) installed.
 # crate-type = ["cdylib"]
 ```
 
-Now run `cargo build`. The built dynamic library file should be generated in `target/debug/`.
+Now run `cargo build --features standalone_cdylib`. The built dynamic library file should be generated in `target/debug/`.
 
 You'll have to set up the `.gdextension` file as well for Godot to recognize the dynamic library file. This is explained in more detail in the [godot-rust book](https://godot-rust.github.io/book/intro/hello-world.html#wire-up-godot-with-rust).
 
@@ -151,6 +151,8 @@ The `entry_symbol` of this library is `fluorite_cast`.
 ## Changelogs
 
 Note: The API is not fully stable until it is bumped to `1.0.0`, a minor version bump (`0.x.y -> 0.x+1.y`) may introduce breaking changes!
+
+- `0.3.0`: Fixed deprecated syntax and linker errors in some Linux environments; any projects that use this crate directly to build a cdylib instead of as a dependency of another crate must build this crate as `cargo build --features standalone_cdylib`!
 
 - `0.2.2`: Added `freeing` signal to `FluoriteCastFactory`
 
